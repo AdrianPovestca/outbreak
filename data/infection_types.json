@@ -1,0 +1,32 @@
+[
+  {
+    "id": "bacteria",
+    "name": "Bacteria",
+    "spread_vectors": ["water", "contaminated_food", "corpses", "human_contact"],
+    "lethality": 0.35,
+    "violence": 0.2,
+    "dna_mutation": false,
+    "reanimation": false,
+    "spread_speed": 1.0
+  },
+  {
+    "id": "virus",
+    "name": "Virus",
+    "spread_vectors": ["animal_contact", "human_contact", "body_fluids", "air"],
+    "lethality": 0.55,
+    "violence": 0.7,
+    "dna_mutation": true,
+    "reanimation": false,
+    "spread_speed": 1.2
+  },
+  {
+    "id": "zombie",
+    "name": "Zombie",
+    "spread_vectors": ["bite", "blood", "corpse_contact"],
+    "lethality": 0.0,
+    "violence": 1.0,
+    "dna_mutation": true,
+    "reanimation": true,
+    "spread_speed": 1.4
+  }
+]

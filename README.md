@@ -1,4 +1,4 @@
-# Outbreak v.2.00
+# Outbreak v.2.02
 
 A 2D strategy/survival game. You control a country or region during a global
 bio-crisis (bacteria / virus / zombie outbreak). Survive, expand, develop the

@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Outbreak</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  :root {
+    --bg: #0b121a; --panel: #111b26; --panel2: #162230; --line: #243446; --text: #cdd7e2; --mut: #7d8c9d;
+    --red: #d4343e; --blue: #3d7fe0; --green: #3f9f6f; --gold: #d9a93a; --amber: #d88a2a;
+    --cond: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --bar: 64px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 var(--body); overflow: hidden; }
+  button { font: inherit; color: inherit; }
+  .hidden { display: none !important; }
+  .num { font-family: var(--cond); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---------- map ---------- */
+  #map { position: absolute; inset: 0; }
+  .leaflet-container { background: #0c1722; cursor: default; font-family: var(--body); }
+  .leaflet-interactive { cursor: pointer; }
+  .leaflet-bottom { bottom: var(--bar); transition: bottom .25s; }
+  body.collapsed .leaflet-bottom { bottom: 0; }
+  .leaflet-control-zoom { border: 1px solid var(--line) !important; border-radius: 3px !important; }
+  .leaflet-control-zoom a { background: var(--panel); color: var(--text); border-color: var(--line); border-radius: 0 !important; }
+  .leaflet-control-zoom a:hover { background: var(--panel2); }
+  .leaflet-control-attribution { background: rgba(11,18,26,.7) !important; color: var(--mut) !important; }
+  .leaflet-control-attribution a { color: var(--mut) !important; }
+  .tr { width: 14px; height: 14px; color: #dbe6f2; opacity: .9; }
+  .tr svg { width: 14px; height: 14px; display: block; }
+  .tr.sea { color: #7fc4e6; }
+  .tr.closed { opacity: .28; }
+  .z-s .tr { width: 11px; height: 11px; } .z-s .tr svg { width: 11px; height: 11px; }
+  .mv { width: 18px; height: 18px; color: #fff; filter: drop-shadow(0 1px 2px #000); }
+  .mv svg { width: 18px; height: 18px; display: block; transition: transform .1s linear; }
+  .mv.sea { color: #9fd8f2; }
+  .ring { width: 10px; height: 10px; border: 1.5px solid var(--red); border-radius: 50%; animation: ring .9s ease-out forwards; }
+  .ring.stop { border-color: var(--amber); }
+  @keyframes ring { from { transform: scale(.3); opacity: 1; } to { transform: scale(4); opacity: 0; } }
+
+  /* ---------- top: date + speed ---------- */
+  #top { position: fixed; top: 10px; left: 58px; z-index: 1000; display: flex; align-items: stretch; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
+  #date { padding: 6px 14px 6px 12px; min-width: 150px; border-right: 1px solid var(--line); }
+  #date b { display: block; font: 600 20px/1.1 var(--cond); letter-spacing: .03em; color: #fff; text-transform: uppercase; }
+  #date span { font-size: 12px; color: var(--mut); }
+  #speed { display: flex; align-items: center; padding: 0 4px; gap: 2px; }
+  #speed button { width: 34px; height: 34px; display: grid; place-items: center; background: none; border: 0; border-radius: 3px; color: var(--mut); cursor: pointer; }
+  #speed button:hover { color: #fff; background: var(--panel2); }
+  #speed button.on { color: #fff; background: var(--blue); }
+  #speed svg { width: 16px; height: 16px; fill: currentColor; }
+
+  /* ---------- news banner ---------- */
+  #banner { position: fixed; top: 10px; left: 50%; z-index: 1000; transform: translate(-50%, -140%); transition: transform .35s; max-width: min(620px, calc(100vw - 560px)); min-width: 280px;
+    background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--red); border-radius: 3px; padding: 7px 14px; cursor: pointer; }
+  #banner.on { transform: translate(-50%, 0); }
+  #banner small { display: block; font: 600 11px var(--cond); letter-spacing: .1em; color: var(--mut); text-transform: uppercase; }
+  #banner span { display: block; color: #fff; }
+
+  /* ---------- bottom bar ---------- */
+  #dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100; transition: transform .25s; }
+  body.collapsed #dock { transform: translateY(100%); }
+  #dock-toggle { position: absolute; left: 50%; top: -20px; transform: translateX(-50%); width: 64px; height: 20px; display: grid; place-items: center; background: var(--panel); border: 1px solid var(--line); border-bottom: 0; border-radius: 3px 3px 0 0; color: var(--mut); cursor: pointer; padding: 0; }
+  #dock-toggle:hover { color: #fff; }
+  #dock-toggle svg { width: 14px; height: 8px; transition: transform .25s; } body.collapsed #dock-toggle svg { transform: rotate(180deg); }
+  #bar { height: var(--bar); display: flex; align-items: center; gap: 22px; padding: 0 16px; background: var(--panel); border-top: 1px solid var(--line); }
+  .st { min-width: 0; } .st label { display: block; font: 600 11px var(--cond); letter-spacing: .1em; color: var(--mut); text-transform: uppercase; }
+  .st .v { font: 600 20px/1.1 var(--cond); color: #fff; white-space: nowrap; }
+  .st .s { font-size: 11.5px; color: var(--mut); white-space: nowrap; }
+  .st.gold .v { color: var(--gold); }
+  .meter { width: 90px; height: 3px; background: #223243; margin-top: 4px; } .meter i { display: block; height: 100%; width: 0; background: var(--blue); transition: width .3s; }
+  .sep { width: 1px; align-self: stretch; margin: 12px 0; background: var(--line); }
+  .grow { flex: 1; }
+  .btn { height: 34px; padding: 0 12px; background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; font: 600 13px var(--cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: #1c2b3b; border-color: #34495f; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.on { border-color: var(--red); color: #ff9aa0; }
+  .btn.red { background: #5a1d23; border-color: var(--red); color: #fff; } .btn.red:hover { background: #75242c; }
+  .btn.blue { background: #1c3f73; border-color: var(--blue); color: #fff; } .btn.blue:hover { background: #24508f; }
+  .btn.gold { border-color: #6b5420; color: var(--gold); }
+  .btn .dot { display: inline-block; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 6px; border-radius: 8px; background: var(--red); color: #fff; font-size: 11px; line-height: 16px; text-align: center; vertical-align: 1px; }
+  body.busy #bar .btn, body.busy #drawer .btn { pointer-events: none; opacity: .6; }
+
+  /* ---------- drawer ---------- */
+  #drawer { position: fixed; top: 0; right: 0; bottom: var(--bar); width: min(420px, 100vw); z-index: 1050; background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; transform: translateX(102%); transition: transform .25s; }
+  body.collapsed #drawer { bottom: 0; }
+  #drawer.open { transform: none; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .tabs button { flex: 1; padding: 11px 0; background: none; border: 0; border-bottom: 2px solid transparent; font: 600 13px var(--cond); letter-spacing: .1em; text-transform: uppercase; color: var(--mut); cursor: pointer; }
+  .tabs button.on { color: #fff; border-bottom-color: var(--red); }
+  .tabs .x { flex: 0 0 44px; font-size: 20px; }
+  .pane { flex: 1; overflow-y: auto; padding: 12px 14px 18px; }
+  .pane h4 { margin: 14px 0 6px; font: 600 12px var(--cond); letter-spacing: .1em; color: var(--mut); text-transform: uppercase; }
+  .news-day { margin: 14px 0 4px; font: 600 12px var(--cond); letter-spacing: .1em; color: var(--mut); text-transform: uppercase; }
+  .news-item { padding: 5px 0 5px 10px; border-left: 2px solid var(--line); margin-bottom: 3px; color: #b9c6d4; }
+  .news-item.imp { border-left-color: var(--red); color: #fff; }
+  .news-item.dip { border-left-color: var(--blue); }
+  .row { padding: 8px 0; border-bottom: 1px solid #1b2a3a; cursor: pointer; }
+  .row:hover { background: #142030; }
+  .row .l1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .row .l1 b { font-weight: 500; color: #fff; }
+  .row .l2 { display: flex; gap: 10px; align-items: center; margin-top: 3px; font-size: 12px; color: var(--mut); }
+  .rel { position: relative; flex: 1; height: 4px; background: #223243; } .rel i { position: absolute; top: 0; bottom: 0; }
+  .tag { display: inline-block; padding: 0 6px; margin-left: 4px; border-radius: 2px; font: 600 11px/16px var(--cond); letter-spacing: .06em; text-transform: uppercase; background: #223243; color: #a9bacb; }
+  .tag.war { background: #5a1d23; color: #ffb3b8; } .tag.ally { background: #1f4a37; color: #a6e3c3; } .tag.trade { background: #1c3f73; color: #b9d3ff; }
+  .acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 2px; }
+  .acts .btn { height: 28px; font-size: 12px; }
+  input[type=search], select { width: 100%; height: 34px; padding: 0 10px; background: #0d1721; color: #fff; border: 1px solid var(--line); border-radius: 3px; font: inherit; }
+  .chips { display: flex; gap: 6px; margin: 8px 0 4px; flex-wrap: wrap; }
+  .chips button { height: 26px; padding: 0 10px; background: none; border: 1px solid var(--line); border-radius: 13px; color: var(--mut); cursor: pointer; font-size: 12px; }
+  .chips button.on { color: #fff; border-color: var(--blue); background: #172a45; }
+  .kv { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #1b2a3a; color: var(--mut); } .kv b { color: #fff; font-weight: 500; }
+  .bar2 { height: 4px; background: #223243; margin-top: 3px; } .bar2 i { display: block; height: 100%; background: var(--red); }
+
+  /* ---------- modal: upgrades / menu / end ---------- */
+  .ov { position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; padding: 16px; background: rgba(4,8,12,.72); opacity: 0; visibility: hidden; transition: opacity .15s; }
+  .ov.open { opacity: 1; visibility: visible; }
+  .sheet { width: min(940px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+  .sh-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+  .sh-head h2 { margin: 0; font: 700 22px var(--cond); letter-spacing: .06em; text-transform: uppercase; color: #fff; }
+  .x-btn { background: none; border: 0; font-size: 24px; line-height: 1; color: var(--mut); cursor: pointer; padding: 0 6px; } .x-btn:hover { color: #fff; }
+  .upg { display: grid; grid-template-columns: 1.15fr 1fr; min-height: 0; overflow: auto; }
+  .tracks { padding: 8px 18px 16px; border-right: 1px solid var(--line); }
+  .track { padding: 12px 0; border-bottom: 1px solid #1b2a3a; }
+  .track h3 { margin: 0; font: 600 16px var(--cond); letter-spacing: .06em; text-transform: uppercase; color: #fff; display: flex; justify-content: space-between; }
+  .track h3 em { font-style: normal; font-size: 13px; color: var(--mut); }
+  .track p { margin: 2px 0 8px; font-size: 12px; color: var(--mut); }
+  .nodes { display: flex; align-items: center; }
+  .node { width: 38px; height: 38px; display: grid; place-items: center; background: #0d1721; border: 1px solid #2c4057; color: var(--mut); font: 600 15px var(--cond); cursor: pointer; border-radius: 3px; }
+  .node.built { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .node.next { border-color: var(--gold); color: var(--gold); }
+  .node.sel { box-shadow: 0 0 0 2px #fff; }
+  .link { width: 14px; height: 2px; background: #2c4057; } .link.built { background: var(--blue); }
+  .detail { padding: 18px; }
+  .detail h3 { margin: 0 0 4px; font: 700 22px var(--cond); color: #fff; }
+  .detail .meta { color: var(--mut); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; font-family: var(--cond); font-weight: 600; }
+  .detail p { margin: 10px 0 14px; color: #b9c6d4; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; margin: 6px 0 4px; }
+  .seg button { flex: 1; height: 30px; background: none; border: 0; border-right: 1px solid var(--line); cursor: pointer; color: var(--mut); font: 600 12px var(--cond); letter-spacing: .08em; text-transform: uppercase; }
+  .seg button:last-child { border-right: 0; } .seg button.on { background: var(--blue); color: #fff; }
+  .hint { font-size: 12px; color: var(--mut); min-height: 16px; }
+
+  #menu { z-index: 2000; background: #070d13; }
+  #menu.hidden { display: grid !important; opacity: 0; visibility: hidden; pointer-events: none; }
+  .menu { width: min(720px, 100%); }
+  .menu h1 { margin: 0 0 2px; font: 700 54px/1 var(--cond); letter-spacing: .3em; color: var(--red); }
+  .menu .tag2 { margin: 0 0 22px; color: var(--mut); }
+  .menu .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .menu h2 { margin: 0 0 8px; font: 600 12px var(--cond); letter-spacing: .12em; color: var(--mut); text-transform: uppercase; }
+  #sel-country { width: 100%; height: 240px; margin-top: 8px; padding: 2px; background: #0d1721; color: #fff; border: 1px solid var(--line); border-radius: 3px; font: inherit; }
+  #sel-country option { padding: 5px 8px; } #sel-country option:checked { background: var(--blue) linear-gradient(0deg, var(--blue), var(--blue)); }
+  .dopt { display: block; width: 100%; text-align: left; padding: 10px 12px; margin-bottom: 6px; background: none; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
+  .dopt:hover { background: var(--panel); } .dopt[aria-pressed=true] { border-color: var(--red); background: #1d1519; }
+  .dopt b { font: 600 17px var(--cond); letter-spacing: .05em; text-transform: uppercase; color: #fff; } .dopt span { display: block; font-size: 12.5px; color: var(--mut); }
+  #btn-start { margin-top: 18px; width: 100%; height: 46px; background: var(--red); border: 0; border-radius: 3px; color: #fff; font: 700 17px var(--cond); letter-spacing: .25em; cursor: pointer; } #btn-start:hover { background: #e24a54; } #btn-start:disabled { opacity: .5; }
+  #menu-note { margin-top: 10px; color: var(--mut); font-size: 12.5px; text-align: center; } #menu-err { color: #ff8a93; text-align: center; min-height: 18px; margin-top: 6px; }
+
+  #end .sheet { width: min(460px, 100%); padding: 28px; text-align: center; }
+  #end h2 { margin: 0 0 6px; font: 700 44px var(--cond); letter-spacing: .2em; } #end.victory h2 { color: var(--green); } #end.defeat h2 { color: var(--red); }
+  #end p { color: #b9c6d4; margin: 0 0 18px; }
+  .endgrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 20px; } .endgrid div { padding: 8px; border: 1px solid var(--line); border-radius: 3px; font-size: 12px; color: var(--mut); } .endgrid b { display: block; font: 600 20px var(--cond); color: #fff; }
+
+  #toast { position: fixed; left: 50%; bottom: calc(var(--bar) + 14px); transform: translate(-50%, 10px); z-index: 1200; max-width: min(520px, 92vw); padding: 9px 14px; background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 3px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); } #toast.err { border-left-color: var(--red); }
+  #building { position: fixed; left: 58px; top: 64px; z-index: 1000; padding: 4px 10px; font-size: 12px; color: var(--mut); background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
+
+  /* ---------- popups ---------- */
+  .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  .leaflet-popup-tip { background: var(--panel); border: 1px solid var(--line); }
+  .leaflet-popup-close-button { color: var(--mut) !important; }
+  .leaflet-popup-content { margin: 12px 14px; font-size: 13px; line-height: 1.5; min-width: 220px; }
+  .pp h3 { margin: 0; font: 700 18px/1.2 var(--cond); color: #fff; letter-spacing: .02em; }
+  .pp .sub { color: var(--mut); font-size: 12px; margin-bottom: 6px; }
+  .pp .kv { padding: 2px 0; }
+  .pp .btns { display: grid; gap: 6px; margin-top: 10px; }
+  .pp .btn { height: 30px; font-size: 12.5px; text-align: left; padding: 0 10px; }
+  .pp .warn { font-size: 12px; color: #ffb3b8; background: #2a1519; border: 1px solid #5a1d23; padding: 6px 8px; margin-top: 8px; border-radius: 3px; }
+  .pp .small { font-size: 11.5px; color: var(--mut); }
+
+
+  /* ---------- atmosphere: the world decays ---------- */
+  #atmo { position: fixed; inset: 0; z-index: 900; pointer-events: none; }
+  #ash { position: absolute; inset: 0; }
+  #shade { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,calc(.3 + var(--decay, 0) * .45)) 100%);
+    box-shadow: inset 0 0 calc(60px + var(--decay, 0) * 160px) rgba(130,12,22,calc(var(--decay, 0) * .4)); }
+  #flash { position: absolute; inset: 0; opacity: 0; }
+  .leaflet-overlay-pane, .leaflet-cells-pane { filter: saturate(calc(1 - var(--decay, 0) * .6)) brightness(calc(1 - var(--decay, 0) * .2)); }
+
+  /* ---------- day bar, phase, channels, sound ---------- */
+  #date { position: relative; }
+  #dayprog { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--red); }
+  #snd { width: 34px; height: 34px; margin: auto 4px; display: grid; place-items: center; background: none; border: 0; color: var(--mut); cursor: pointer; border-radius: 3px; }
+  #snd:hover { color: #fff; background: var(--panel2); } #snd.off { opacity: .4; } #snd svg { width: 16px; height: 16px; }
+  .chan { display: flex; gap: 3px; }
+  .chan button { width: 34px; height: 34px; display: grid; place-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; color: #9fb2c6; cursor: pointer; padding: 0; }
+  .chan button:hover { border-color: #34495f; color: #fff; }
+  .chan button.on { color: #ff9aa0; border-color: var(--red); background: #2a1519; }
+  .chan svg { width: 15px; height: 15px; }
+  .ph2 { color: #e0a23a !important; } .ph3 { color: #e0592a !important; } .ph4 { color: #d4343e !important; }
+
+  /* ---------- decisions and chronicle cards ---------- */
+  #ev { z-index: 1500; background: radial-gradient(ellipse at 50% 30%, rgba(26,9,12,.94), rgba(3,5,8,.98) 70%); transition: opacity .4s; }
+  .evbox { width: min(680px, 100%); text-align: center; }
+  .ev-meta { display: flex; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid var(--line); font: 600 12px var(--cond); letter-spacing: .22em; text-transform: uppercase; color: var(--mut); }
+  .ev-emblem { width: 70px; height: 70px; margin: 26px auto 8px; color: var(--red); }
+  #ev.m-fire .ev-emblem { color: #e0592a; } #ev.m-shield .ev-emblem { color: #3d7fe0; } #ev.m-crown .ev-emblem { color: var(--gold); }
+  #ev.m-flask .ev-emblem { color: #4cc3d9; } #ev.m-wave .ev-emblem { color: #4ca0d9; } #ev.m-skull .ev-emblem { color: #c9c9c9; }
+  #ev-title { margin: 4px 0 16px; font: 700 48px/1.05 var(--cond); letter-spacing: .09em; text-transform: uppercase; color: #fff; }
+  #ev-text { min-height: 96px; margin: 0 auto 16px; max-width: 560px; font: italic 400 19px/1.6 "Source Serif 4", Georgia, serif; color: #cfd8e3; cursor: pointer; }
+  #ev-choices { text-align: left; }
+  .evc { display: grid; grid-template-columns: 26px 1fr auto; gap: 2px 10px; width: 100%; text-align: left; padding: 12px 14px; margin-top: 8px; background: #0d151e; border: 1px solid var(--line); border-radius: 2px; cursor: pointer; }
+  .evc:hover:not(:disabled), .evc:focus-visible { border-color: #fff; background: #13202c; outline: 0; }
+  .evc:disabled { opacity: .4; cursor: not-allowed; }
+  .evc .n { font: 700 16px var(--cond); color: var(--red); } .evc .lab { color: #fff; font-weight: 500; }
+  .evc .cost { font: 600 15px var(--cond); color: var(--gold); } .evc small { grid-column: 2 / -1; font-size: 12.5px; color: var(--mut); }
+  #ev.k-card .evc { text-align: center; grid-template-columns: 1fr; } #ev.k-card .evc .n { display: none; }
+
+  @media (max-width: 1100px) { #banner { top: 60px; max-width: calc(100vw - 24px); } }
+  @media (max-width: 900px) { #bar { gap: 12px; overflow-x: auto; } .menu .cols, .upg { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="atmo"><canvas id="ash"></canvas><div id="shade"></div><div id="flash"></div></div>
+
+<!-- ============ START MENU ============ -->
+<div id="menu" class="ov open">
+  <div class="menu">
+    <h1>OUTBREAK</h1>
+    <p class="tag2">A pathogen is loose. Keep your nation alive until the world finds a cure.</p>
+    <div class="cols">
+      <div>
+        <h2>Your country</h2>
+        <input id="country-search" type="search" placeholder="Search country" autocomplete="off" aria-label="Search country">
+        <select id="sel-country" size="8" aria-label="Country"></select>
+      </div>
+      <div>
+        <h2>Disease</h2>
+        <div id="dopts"></div>
+      </div>
+    </div>
+    <button id="btn-start" disabled>START</button>
+    <div id="menu-note"></div>
+    <div id="menu-err"></div>
+  </div>
+</div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="top">
+    <div id="date"><b id="d-date">–</b><span id="d-day">Day 0</span><i id="dayprog"></i></div>
+    <div id="speed">
+      <button data-s="0" class="on" title="Pause (space)"><svg viewBox="0 0 16 16"><rect x="3" y="2" width="3.5" height="12"/><rect x="9.5" y="2" width="3.5" height="12"/></svg></button>
+      <button data-s="1" title="1 day = 25 seconds"><svg viewBox="0 0 16 16"><path d="M4 2l9 6-9 6z"/></svg></button>
+      <button data-s="2" title="1 day = 5 seconds"><svg viewBox="0 0 16 16"><path d="M1 2l6 6-6 6zM8 2l6 6-6 6z"/></svg></button>
+      <button data-s="3" title="1 day = 1 second"><svg viewBox="0 0 16 16"><path d="M0 3l5 5-5 5zM5.5 3l5 5-5 5zM11 3l5 5-5 5z"/></svg></button>
+      <button data-s="4" title="One week every 1.4 seconds"><svg viewBox="0 0 16 16"><path d="M0 3l4 5-4 5zM4 3l4 5-4 5zM8 3l4 5-4 5zM12 3l4 5-4 5z"/></svg></button>
+    </div>
+    <button id="snd" title="Sound"><svg viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 5.5c1.3 1.3 1.3 3.7 0 5M13 3.5c2.6 2.6 2.6 6.4 0 9" stroke="currentColor" fill="none" stroke-width="1.3"/></svg></button>
+  </div>
+  <div id="building" class="hidden">Mapping regions…</div>
+  <div id="banner"><small id="bn-date"></small><span id="bn-text"></span></div>
+
+  <div id="drawer">
+    <div class="tabs">
+      <button data-t="news" class="on">News</button>
+      <button data-t="dip">Diplomacy</button>
+      <button data-t="country">My country</button>
+      <button data-t="dis">Disease</button>
+      <button class="x" id="drawer-x" aria-label="Close">×</button>
+    </div>
+    <div class="pane" id="pane-news"></div>
+    <div class="pane hidden" id="pane-dip"></div>
+    <div class="pane hidden" id="pane-country"></div>
+    <div class="pane hidden" id="pane-dis"></div>
+  </div>
+
+  <div id="dock">
+    <button id="dock-toggle" aria-label="Show or hide the bar" aria-expanded="true"><svg viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 1l6 6 6-6"/></svg></button>
+    <div id="bar">
+      <div class="st"><label>Disease</label><div class="v" id="s-disease">–</div><div class="s" id="s-dtype"></div></div>
+      <div class="st"><label>Phase</label><div class="v" id="s-phase">1 · Outbreak</div><div class="s" id="s-mut"></div></div>
+      <div class="st"><label>Cure</label><div class="v" id="s-cure">0%</div><div class="meter"><i id="m-cure"></i></div></div>
+      <div class="st"><label>World infected</label><div class="v" id="s-world">0%</div><div class="meter"><i id="m-world" style="background:var(--red)"></i></div></div>
+      <div class="sep"></div>
+      <div class="st gold"><label>Budget</label><div class="v" id="s-budget">$ 0</div><div class="s" id="s-income"></div></div>
+      <div class="st"><label>Stability</label><div class="v" id="s-stab">–</div><div class="meter"><i id="m-stab" style="background:var(--green)"></i></div></div>
+      <div class="grow"></div>
+      <div class="chan" id="chan" title="Close or open one channel at a time">
+        <button data-m="air" title="Airports"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M8 0.5l1.1 5.3 5.4 3v1.7l-5.4-1.5-.5 3.4 1.9 1.4v1.2L8 14.5l-2.5.5v-1.2l1.9-1.4-.5-3.4-5.4 1.5V8.8l5.4-3z"/></svg></button>
+        <button data-m="sea" title="Ports"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M7 1h2v3h3v3H4V4h3zM1.5 8.5h13L12.5 14h-9z"/></svg></button>
+        <button data-m="land" title="Land borders"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M2 4h2v9H2zM7 4h2v9H7zM12 4h2v9h-2zM1 6h14v1.5H1zM1 10h14v1.5H1z"/></svg></button>
+      </div>
+      <button class="btn" id="btn-close">Close all</button>
+      <button class="btn" id="btn-open">Open all</button>
+      <div class="sep"></div>
+      <button class="btn gold" id="btn-upg">Strategy / Upgrades</button>
+      <button class="btn" data-open="dip">Diplomacy</button>
+      <button class="btn" data-open="country">Country</button>
+      <button class="btn" data-open="news">News<span class="dot hidden" id="news-dot">0</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ UPGRADES ============ -->
+<div id="upg-ov" class="ov" role="dialog" aria-modal="true" aria-labelledby="upg-title">
+  <div class="sheet">
+    <div class="sh-head"><h2 id="upg-title">Strategy / Upgrades</h2><div><span class="num" style="color:var(--gold);font-size:22px;margin-right:16px" id="u-budget">$ 0</span><button class="x-btn" id="upg-x" aria-label="Close">×</button></div></div>
+    <div class="upg"><div class="tracks" id="tracks"></div><div class="detail" id="detail"></div></div>
+  </div>
+</div>
+
+<!-- ============ END ============ -->
+<div id="end" class="ov"><div class="sheet"><h2 id="end-title">VICTORY</h2><p id="end-text"></p><div class="endgrid" id="end-grid"></div><button class="btn blue" id="btn-again" style="height:42px;padding:0 28px">Play again</button></div></div>
+
+<!-- ============ DECISIONS / CHRONICLE ============ -->
+<div id="ev" class="ov"><div class="evbox">
+  <div class="ev-meta"><span id="ev-date"></span><span id="ev-kind"></span></div>
+  <div class="ev-emblem" id="ev-emblem"></div>
+  <h2 id="ev-title"></h2>
+  <p id="ev-text"></p>
+  <div id="ev-choices" class="hidden"></div>
+</div></div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  const WORLD_URLS = [
+    "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json",
+    "https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json",
+    "/data/world.geo.json"
+  ];
+  const SPEEDS = [null, { ms: 25000, days: 1 }, { ms: 5000, days: 1 }, { ms: 1000, days: 1 }, { ms: 1400, days: 7 }];   // 1x = one day every 25 seconds
+  const DISEASES = [
+    { id: "bacteria", name: "Bacteria", text: "Patient and hardy. Travels well by sea." },
+    { id: "virus", name: "Virus", text: "Mutates fast and rides every flight. The cure takes longer." },
+    { id: "zombie", name: "Zombie", text: "Marches over land and kills hard. Weak in the air." },
+    { id: "random", name: "Random", text: "You find out when patient zero appears." }
+  ];
+  const PLANE = '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M8 0.5l1.1 5.3 5.4 3v1.7l-5.4-1.5-.5 3.4 1.9 1.4v1.2L8 14.5l-2.5.5v-1.2l1.9-1.4-.5-3.4-5.4 1.5V8.8l5.4-3z"/></svg>';
+  const SHIP = '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M7 1h2v3h3v3H4V4h3zM1.5 8.5h13L12.5 14h-9z"/></svg>';
+
+  // ======================= helpers =======================
+  const $ = function (id) { return document.getElementById(id); };
+  const esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  const fmt = function (n) { return Math.round(Number(n || 0)).toLocaleString("en-US"); };
+  const pct = function (x, d) { return Number((x * 100).toFixed(d == null ? 1 : d)); };
+  const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function parseDate(iso) { const p = iso.split("-").map(Number); return new Date(p[0], p[1] - 1, p[2]); }
+  function fmtDate(iso, withDay) {
+    const d = parseDate(iso);
+    const s = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    return withDay ? d.toLocaleDateString("en-GB", { weekday: "short" }) + " " + s : s;
+  }
+  function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function toast(msg, err) {
+    const t = $("toast"); t.textContent = msg; t.classList.toggle("err", !!err); t.classList.add("show");
+    clearTimeout(toast.t); toast.t = setTimeout(function () { t.classList.remove("show"); }, err ? 4200 : 2800);
+  }
+
+  // ======================= state =======================
+  let S = null;                       // latest full + merged state
+  let NEWS = [];                      // newest first
+  let unread = 0, busy = false, speed = 0, timer = null, gen = 0, lastTurn = 0, endShown = false;
+  let menuCountries = [], selCountry = null, selDisease = "random";
+  const C = {}, C3 = {}, shapes = {}, R = {};          // countries by id / iso3, country shapes, regions by id
+  const cells = {}, dots = {}, icons = {}, failed = {}, styleKey = {};
+  let worldReady = Promise.resolve();
+
+  function indexCountries(list) {
+    list.forEach(function (c) { C[c.id] = Object.assign(C[c.id] || {}, c); if (C[c.id].iso3) C3[C[c.id].iso3] = C[c.id]; });
+  }
+  const cname = function (id) { return C[id] ? C[id].name : id; };
+  const me = function () { return S && S.player_country; };
+
+  // ======================= map =======================
+  const map = L.map("map", { center: [30, 15], zoom: 2.5, minZoom: 2, maxZoom: 8, zoomSnap: 0.5, maxBounds: [[-85, -190], [85, 190]], maxBoundsViscosity: 1.0, worldCopyJump: false });
+  map.attributionControl.addAttribution("World borders: johan/world.geo.json");
+  [["cells", 430], ["dots", 460], ["icons", 470], ["traffic", 480]].forEach(function (p) { map.createPane(p[0]); map.getPane(p[0]).style.zIndex = p[1]; });
+  ["icons", "traffic"].forEach(function (n) { map.getPane(n).style.pointerEvents = "none"; });
+  function zoomClass() { const z = map.getZoom(), c = map.getContainer(); c.classList.toggle("z-s", z < 3.5); renderIcons(); }
+  map.on("zoomend", zoomClass);
+
+  const BASE = { fillColor: "#1a2634", fillOpacity: 1, color: "#0c1722", weight: 0.8 };
+  async function loadWorld() {
+    for (const url of WORLD_URLS) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(res.status);
+        const geo = await res.json();
+        geo.features.forEach(function (f) { if (f.id) shapes[f.id] = f; });
+        L.geoJSON(geo, {
+          style: BASE,
+          onEachFeature: function (f, layer) {
+            layer.on("mouseover", function () { layer.setStyle({ fillColor: "#223244" }); });
+            layer.on("mouseout", function () { layer.setStyle(BASE); });
+            layer.on("click", function (e) {
+              const c = C3[f.id];
+              L.popup({ closeButton: false }).setLatLng(e.latlng)
+                .setContent('<div class="pp"><h3>' + esc(c ? c.name : (f.properties && f.properties.name) || "Unknown") + '</h3><div class="sub">Capital: ' + esc(c && c.capital_name ? c.capital_name : "Unknown") + "</div></div>").openOn(map);
+            });
+          }
+        }).addTo(map);
+        return;
+      } catch (e) { /* next source */ }
+    }
+    toast("Could not load the world map.", true);
+  }
+
+  // ======================= region cells: Voronoi clipped to the real border =======================
+  function toLatLngs(g) {
+    const f = function (r) { return r.map(function (p) { return [p[1], p[0]]; }); };
+    return g.type === "Polygon" ? g.coordinates.map(f) : g.coordinates.map(function (poly) { return poly.map(f); });
+  }
+  function mapLng(g, fn) {
+    const f = function (c) { return [fn(c[0]), c[1]]; };
+    return g.type === "Polygon" ? { type: "Polygon", coordinates: g.coordinates.map(function (r) { return r.map(f); }) }
+      : { type: "MultiPolygon", coordinates: g.coordinates.map(function (p) { return p.map(function (r) { return r.map(f); }); }) };
+  }
+  function lngRange(g) {
+    let a = 999, b = -999;
+    (g.type === "Polygon" ? [g.coordinates] : g.coordinates).forEach(function (p) { p[0].forEach(function (c) { if (c[0] < a) a = c[0]; if (c[0] > b) b = c[0]; }); });
+    return [a, b];
+  }
+  function splitAnti(feat) {
+    const polys = [];
+    const add = function (g, dx) {
+      if (!g) return;
+      (g.type === "Polygon" ? [g.coordinates] : g.coordinates).forEach(function (p) { polys.push(p.map(function (r) { return r.map(function (c) { return [c[0] + dx, c[1]]; }); })); });
+    };
+    const w = turf.intersect(feat, turf.bboxPolygon([0, -90, 180, 90])), e = turf.intersect(feat, turf.bboxPolygon([180, -90, 540, 90]));
+    add(w && w.geometry, 0); add(e && e.geometry, -360);
+    return { type: "MultiPolygon", coordinates: polys };
+  }
+  function countryCells(shape, regs) {
+    const out = {};
+    if (regs.length === 1) { out[regs[0].id] = shape.geometry; return out; }
+    const rg = lngRange(shape.geometry), wrap = rg[0] < -150 && rg[1] > 150;
+    const sh = wrap ? function (x) { return x < 0 ? x + 360 : x; } : function (x) { return x; };
+    const feat = { type: "Feature", properties: {}, geometry: wrap ? mapLng(shape.geometry, sh) : shape.geometry };
+    const pts = turf.featureCollection(regs.map(function (r) { return turf.point([sh(r.lng), r.lat], { id: r.id }); }));
+    const bb = turf.bbox(feat);
+    const vor = turf.voronoi(pts, { bbox: [bb[0] - 1, bb[1] - 1, bb[2] + 1, bb[3] + 1] });
+    vor.features.forEach(function (cell, i) {
+      if (!cell) return;
+      const it = turf.intersect(cell, feat);
+      if (it) out[pts.features[i].properties.id] = wrap ? splitAnti(it) : it.geometry;
+    });
+    return Object.keys(out).length ? out : null;
+  }
+
+  function cellStyle(r, hover) {
+    const owner = r.owner, mine = owner === me();
+    let color = "#e6f1ff", weight = 0.7, opacity = hover ? 0.7 : 0.16, dash = null, fill = "#ffffff", fo = hover ? 0.08 : 0.01;
+    const c = C[owner];
+    if (mine) { color = "#3d7fe0"; weight = 1.6; opacity = 0.95; fill = "#3d7fe0"; fo = hover ? 0.18 : 0.07; }
+    else if (c && c.war) { color = "#d4343e"; weight = 1.2; opacity = 0.8; }
+    else if (c && c.ally) { color = "#3f9f6f"; weight = 1.2; opacity = 0.8; }
+    else if (c && c.trade) { color = "#6b9fe0"; opacity = 0.5; }
+    if (r.lockdown) { dash = r.lockdown === 2 ? "2 3" : "5 4"; color = r.lockdown === 2 ? "#d4343e" : "#d88a2a"; weight = 1.6; opacity = 0.95; }
+    if (r.dead > 0.08) { fill = "#000000"; fo = Math.max(fo, Math.min(0.8, r.dead * 0.95)); }            // the dead zones go dark
+    else if (r.infection > 0.15) { fill = "#d4343e"; fo = Math.max(fo, Math.min(0.15, r.infection * 0.15)); }
+    return { color: color, weight: weight, opacity: opacity, dashArray: dash, fillColor: fill, fillOpacity: fo };
+  }
+  function buildCells() {
+    const my = gen, groups = {};
+    S.regions.forEach(function (r) { (groups[r.country_id] = groups[r.country_id] || []).push(r); });
+    const ids = Object.keys(groups);
+    let i = 0;
+    $("building").classList.remove("hidden");
+    (function step() {
+      if (my !== gen) return;
+      for (const stop = Math.min(ids.length, i + 8); i < stop; i++) {
+        const cid = ids[i], regs = groups[cid], c = C[cid], shape = c && shapes[c.iso3];
+        let out = null;
+        try { if (shape && window.turf) out = countryCells(shape, regs); } catch (e) { out = null; }
+        if (!out) { failed[cid] = true; continue; }
+        regs.forEach(function (r) {
+          if (!out[r.id]) return;
+          const layer = L.polygon(toLatLngs(out[r.id]), Object.assign({ pane: "cells", bubblingMouseEvents: false, smoothFactor: 0.5, lineJoin: "round" }, cellStyle(r, false)));
+          layer.on("click", function (e) { openRegion(r.id, e.latlng); });
+          layer.on("mouseover", function () { layer.setStyle(cellStyle(R[r.id], true)); });
+          layer.on("mouseout", function () { layer.setStyle(cellStyle(R[r.id], false)); });
+          layer.addTo(map);
+          cells[r.id] = layer;
+        });
+      }
+      if (i < ids.length) setTimeout(step, 0); else { $("building").classList.add("hidden"); renderMap(); }
+    })();
+  }
+
+  // ======================= dots + transport icons =======================
+  function renderMap() {
+    S.regions.forEach(function (r) {
+      R[r.id] = r;
+      const key = [r.owner, r.lockdown, C[r.owner] && (C[r.owner].war ? 1 : C[r.owner].ally ? 2 : C[r.owner].trade ? 3 : 0), Math.round(r.dead * 10), Math.round(r.infection * 8)].join("|");
+      if (cells[r.id] && styleKey[r.id] !== key) { cells[r.id].setStyle(cellStyle(r, false)); styleKey[r.id] = key; }
+      const inf = r.infection > 0.0005, mine = r.owner === me();
+      let m = dots[r.id];
+      if (!inf && !mine && !failed[r.country_id]) { if (m) { map.removeLayer(m); delete dots[r.id]; } return; }
+      let st;
+      if (inf) st = { radius: 2 + 3.2 * Math.sqrt(r.infection), color: "#000", weight: 0, opacity: 0, fillColor: r.dead > 0.5 ? "#7a1d24" : "#d4343e", fillOpacity: 0.9 };
+      else if (mine) st = { radius: 2.5, color: "#3d7fe0", weight: 1.2, opacity: 1, fillColor: "#0c1722", fillOpacity: 1 };
+      else st = { radius: 2, color: "#8aa0b8", weight: 0, opacity: 0, fillColor: "#8aa0b8", fillOpacity: 0.35 };
+      if (!m) {
+        m = L.circleMarker([r.lat, r.lng], Object.assign({ pane: "dots", bubblingMouseEvents: false }, st)).addTo(map);
+        m.on("click", function (e) { openRegion(r.id, e.latlng); });
+        dots[r.id] = m;
+      } else { m.setStyle(st); m.setRadius(st.radius); }
+    });
+    renderIcons();
+  }
+  function iconHtml(kind, closed) { return '<div class="tr ' + kind + (closed ? " closed" : "") + '">' + (kind === "air" ? PLANE : SHIP) + "</div>"; }
+  function setIcon(key, kind, ll, closed) {
+    if (!ll) { if (icons[key]) { map.removeLayer(icons[key]); delete icons[key]; } return; }
+    const ic = L.divIcon({ className: "", html: iconHtml(kind, closed), iconSize: [14, 14], iconAnchor: [7, 7] });
+    if (!icons[key]) icons[key] = L.marker(ll, { pane: "icons", interactive: false, icon: ic }).addTo(map);
+    else { icons[key].setLatLng(ll); icons[key].setIcon(ic); }
+  }
+  function renderIcons() {
+    if (!S) return;
+    const show = map.getZoom() >= 4;
+    const top = {};
+    S.regions.forEach(function (r) { if (r.infection >= 0.02 && (!top[r.country_id] || r.infection > top[r.country_id].infection)) top[r.country_id] = r; });
+    S.countries.forEach(function (c) {
+      const t = top[c.id];
+      if (!t || !show) { setIcon(c.id + "a", "air", null); setIcon(c.id + "s", "sea", null); return; }
+      setIcon(c.id + "a", "air", c.has_airport ? [t.lat + 0.7, t.lng + 0.9] : null, !c.air_open);
+      let ship = null;
+      if (c.has_port && c.ports && c.ports.length) {         // ships sit on real water, never for landlocked countries
+        ship = c.ports.reduce(function (b, p) { const d = Math.pow(p[0] - t.lat, 2) + Math.pow(p[1] - t.lng, 2); return !b || d < b[0] ? [d, p] : b; }, null)[1];
+      }
+      setIcon(c.id + "s", "sea", ship, !c.sea_open);
+    });
+  }
+
+  // ======================= moving planes and ships =======================
+  function norm(l) { return ((l + 540) % 360) - 180; }
+  function travel(t) {
+    if (reduced) return;
+    const sea = t.kind === "sea" && t.path && t.path.length > 1;
+    let pts;
+    if (sea) pts = t.path.slice();
+    else {
+      const a = t.from; let bl = t.to[1];
+      if (Math.abs(bl - a[1]) > 180) bl += a[1] > bl ? 360 : -360;
+      const lift = Math.min(14, Math.hypot(bl - a[1], t.to[0] - a[0]) * 0.18), N = 24;
+      pts = [];
+      for (let i = 0; i <= N; i++) { const k = i / N; pts.push([(1 - k) * (1 - k) * a[0] + 2 * (1 - k) * k * ((a[0] + t.to[0]) / 2 + lift) + k * k * t.to[0], (1 - k) * a[1] + k * bl]); }
+    }
+    const lens = [0];
+    for (let i = 1; i < pts.length; i++) lens.push(lens[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const total = lens[lens.length - 1] || 1, dur = sea ? Math.min(5200, 1800 + total * 55) : 1400, endK = t.blocked ? 0.6 : 1;
+    const mk = L.marker(pts[0], { pane: "traffic", interactive: false, icon: L.divIcon({ className: "", html: '<div class="mv ' + (sea ? "sea" : "") + '">' + (sea ? SHIP : PLANE) + "</div>", iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(map);
+    let trail = L.polyline([norm2(pts[0])], { pane: "traffic", color: sea ? "#7fc4e6" : "#d4343e", weight: 1, opacity: 0.7, interactive: false }).addTo(map);
+    const trails = [trail], t0 = performance.now();
+    function norm2(p) { return [p[0], norm(p[1])]; }
+    let lastPos = pts[0], seg_i = 1;
+    (function step(now) {
+      const k = Math.min(1, (now - t0) / dur) * endK, d = k * total;
+      while (seg_i < pts.length - 1 && lens[seg_i] < d) seg_i++;
+      const a = pts[seg_i - 1], b = pts[seg_i], u = (d - lens[seg_i - 1]) / ((lens[seg_i] - lens[seg_i - 1]) || 1);
+      const pos = [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+      mk.setLatLng(norm2(pos));
+      const e = mk.getElement(), prevPos = lastPos;
+      if (e && e.firstChild && e.firstChild.firstChild && (pos[0] !== prevPos[0] || pos[1] !== prevPos[1])) e.firstChild.firstChild.style.transform = "rotate(" + (Math.atan2((pos[1] - prevPos[1]) * Math.cos(pos[0] * Math.PI / 180), pos[0] - prevPos[0]) * 180 / Math.PI) + "deg)";
+      lastPos = pos;
+      if (Math.abs(norm(pos[1]) - norm(prevPos[1])) > 180) { trail = L.polyline([], { pane: "traffic", color: sea ? "#7fc4e6" : "#d4343e", weight: 1, opacity: 0.7, interactive: false }).addTo(map); trails.push(trail); }
+      trail.addLatLng(norm2(pos));
+      if (now - t0 < dur) return requestAnimationFrame(step);
+      map.removeLayer(mk);
+      const fx = L.marker(norm2(pos), { pane: "traffic", interactive: false, icon: L.divIcon({ className: "", html: '<div class="ring ' + (t.blocked ? "stop" : "") + '"></div>', iconSize: [10, 10], iconAnchor: [5, 5] }) }).addTo(map);
+      setTimeout(function () { map.removeLayer(fx); trails.forEach(function (x) { map.removeLayer(x); }); }, 1000);
+    })(t0);
+  }
+  function animateTraffic(list) { (list || []).slice(0, 12).forEach(function (t, i) { setTimeout(function () { travel(t); }, i * 160); }); }
+
+  // ======================= region popup + actions =======================
+  function api(path, opt) { return fetch(path, opt).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, data: j }; }); }); }
+  function openRegion(id, ll) {
+    const r = R[id];
+    if (!r) return;
+    const box = el("div", "pp");
+    const owner = r.owner !== r.country_id ? ' <span class="small">· held by ' + esc(cname(r.owner)) + "</span>" : "";
+    box.innerHTML = "<h3>" + esc(r.name) + ", " + esc(cname(r.country_id)) + "</h3>" +
+      '<div class="sub">' + (r.owner === me() ? "Your territory" : "Foreign territory") + owner + "</div>" +
+      '<div class="kv">Infection <b>' + pct(r.infection) + "%</b></div>" +
+      '<div class="kv">Population <b>' + fmt(r.population) + "</b></div>" +
+      '<div class="kv">Dead <b>' + pct(r.dead) + "%</b></div>" +
+      (r.lockdown ? '<div class="kv">Status <b>' + (r.lockdown === 2 ? "Lethal cordon" : "Lockdown") + "</b></div>" : "") +
+      (r.owner === me() && r.country_id !== me() && r.unrest > 0.05 ? '<div class="kv">Unrest <b>' + pct(r.unrest, 0) + "%</b></div>" : "");
+    const acts = el("div", "btns");
+    box.appendChild(acts);
+    L.popup({ maxWidth: 300 }).setLatLng(ll).setContent(box).openOn(map);
+    api("/api/region/" + encodeURIComponent(id)).then(function (res) {
+      if (!res.ok) return;
+      const i = res.data;
+      if (i.mine) mineActions(acts, r, i); else foreignActions(acts, r, i);
+    });
+  }
+  function actBtn(parent, label, cls, fn) { const b = el("button", "btn " + (cls || ""), label); b.addEventListener("click", fn); parent.appendChild(b); return b; }
+  function foreignActions(acts, r, i) {
+    if (i.allied) { acts.appendChild(el("div", "small", "Your ally. You cannot invade them.")); }
+    else if (i.truce) { acts.appendChild(el("div", "small", "A ceasefire is in force.")); }
+    else {
+      actBtn(acts, "Invade ($" + fmt(i.invade_cost) + ", " + pct(i.invade_chance, 0) + "% chance)", "red", function () { map.closePopup(); post({ action: "invade", region_id: r.id }); });
+      acts.appendChild(el("div", "small", (i.adjacent ? "Next to your land. " : "Overseas assault. ") + "Taking land means war, unrest and revenge."));
+    }
+    actBtn(acts, "Diplomacy with " + cname(r.owner), "", function () { map.closePopup(); openDrawer("dip", r.owner); });
+  }
+  function mineActions(acts, r, i) {
+    actBtn(acts, r.lockdown ? "Lift lockdown" : "Lockdown this region ($10)", "", function () { map.closePopup(); post({ action: "lockdown", region_id: r.id, on: !r.lockdown }); });
+    if (r.infection >= 0.01) {
+      const ev = actBtn(acts, "Evacuate healthy people…", "", function () {
+        ev.remove();
+        const list = el("div", "btns");
+        if (!i.evac_targets.length) list.appendChild(el("div", "small", "No safe region to move them to."));
+        i.evac_targets.slice(0, 8).forEach(function (t) { actBtn(list, "To " + t.name + " ($" + i.evac_cost + ")", "", function () { map.closePopup(); post({ action: "evacuate", from_region: r.id, to_region: t.id }); }); });
+        list.appendChild(el("div", "small", "Some evacuees may carry the infection with them."));
+        acts.appendChild(list);
+      });
+    }
+    if (r.infection >= 0.02) {
+      const warn = el("div", "warn hidden");
+      const c1 = actBtn(acts, "Lethal cordon…", "", function () {
+        if (warn.dataset.mode !== "cordon") { warn.dataset.mode = "cordon"; warn.classList.remove("hidden"); warn.textContent = "Troops shoot anyone who crosses the line. Almost nothing escapes, but a share of the region dies every day and your stability and standing abroad fall. Click again to confirm."; c1.textContent = "Confirm lethal cordon"; return; }
+        map.closePopup(); post({ action: "cordon", region_id: r.id, on: true, confirm: true });
+      });
+      if (r.infection >= 0.05) {
+        const c2 = actBtn(acts, "Scorched earth…", "", function () {
+          if (warn.dataset.mode !== "purge") { warn.dataset.mode = "purge"; warn.classList.remove("hidden"); warn.textContent = "Everyone in the region is killed and the infection ends there. Big stability loss, and every country will remember it. Click again to confirm."; c2.textContent = "Confirm scorched earth"; return; }
+          map.closePopup(); post({ action: "purge", region_id: r.id, confirm: true });
+        });
+      }
+      acts.appendChild(warn);
+    }
+    if (r.lockdown === 2) actBtn(acts, "Lift cordon", "", function () { map.closePopup(); post({ action: "cordon", region_id: r.id, on: false }); });
+  }
+
+  // ======================= HUD =======================
+  let lastBudget = null;
+  function renderHud() {
+    const s = S, p = s.player;
+    $("d-date").textContent = fmtDate(s.date, true);
+    $("d-day").textContent = "Day " + s.day;
+    $("s-disease").textContent = s.disease_name;
+    $("s-dtype").textContent = s.disease.charAt(0).toUpperCase() + s.disease.slice(1);
+    const cp = pct(s.cure_progress, 1);
+    $("s-cure").textContent = s.cure_started ? cp + "%" : "not started";
+    $("m-cure").style.width = Math.min(100, cp) + "%";
+    $("s-world").textContent = pct(s.world_infected, 1) + "%";
+    $("m-world").style.width = Math.min(100, pct(s.world_infected, 0)) + "%";
+    $("s-budget").textContent = "$ " + fmt(p.budget);
+    const inc = p.income;
+    $("s-income").textContent = (inc >= 0 ? "+" : "") + inc + " / day";
+    $("s-stab").textContent = pct(p.stability, 0) + "%";
+    const sb = $("m-stab"); sb.style.width = pct(p.stability, 0) + "%"; sb.style.background = p.stability > 0.5 ? "var(--green)" : p.stability > 0.25 ? "var(--amber)" : "var(--red)";
+    const closed = p.closed || [];
+    document.querySelectorAll("#chan button").forEach(function (b) { b.classList.toggle("on", closed.indexOf(b.dataset.m) >= 0); });
+    $("btn-close").disabled = closed.length === 3; $("btn-open").disabled = closed.length === 0;
+    const ph = $("s-phase"); ph.textContent = s.phase + " · " + s.phase_name; ph.className = "v ph" + s.phase;
+    $("s-mut").textContent = s.mutations.length ? s.mutations.length + (s.mutations.length === 1 ? " mutation" : " mutations") : "no mutations yet";
+    lastBudget = p.budget;
+    $("u-budget").textContent = "$ " + fmt(p.budget);
+  }
+
+  // ======================= drawer: news / diplomacy / country =======================
+  let tab = "news", dipFilter = "all", dipSearch = "", dipOpen = null, dipData = [];
+  function openDrawer(t, focus) {
+    $("drawer").classList.add("open"); setTab(t);
+    if (t === "dip" && focus) { dipOpen = focus; dipSearch = ""; dipFilter = "all"; }
+    if (t === "news") { unread = 0; $("news-dot").classList.add("hidden"); }
+    if (t === "dip") loadDip();
+  }
+  function setTab(t) {
+    tab = t;
+    document.querySelectorAll(".tabs button[data-t]").forEach(function (b) { b.classList.toggle("on", b.dataset.t === t); });
+    ["news", "dip", "country", "dis"].forEach(function (n) { $("pane-" + n).classList.toggle("hidden", n !== t); });
+    if (t === "news") renderNews(); if (t === "country") renderCountry(); if (t === "dis") renderDisease();
+  }
+  function renderNews() {
+    const pane = $("pane-news"); pane.innerHTML = "";
+    let day = null;
+    NEWS.slice(0, 200).forEach(function (e) {
+      if (e.date !== day) { day = e.date; pane.appendChild(el("div", "news-day", esc(fmtDate(e.date, true)))); }
+      pane.appendChild(el("div", "news-item" + (e.imp ? " imp" : "") + (e.kind === "dip" ? " dip" : ""), esc(e.text)));
+    });
+    if (!NEWS.length) pane.appendChild(el("div", "hint", "Nothing yet."));
+  }
+  function loadDip() {
+    api("/api/diplomacy").then(function (res) { if (res.ok) { dipData = res.data.countries; renderDip(); } });
+  }
+  function renderDip() {
+    const pane = $("pane-dip"); pane.innerHTML = "";
+    const s = el("input"); s.type = "search"; s.placeholder = "Search country"; s.value = dipSearch;
+    s.addEventListener("input", function () { dipSearch = s.value; renderDipList(); });
+    pane.appendChild(s);
+    const chips = el("div", "chips");
+    [["all", "All"], ["near", "Neighbours"], ["war", "At war"], ["friends", "Partners"]].forEach(function (f) {
+      const b = el("button", dipFilter === f[0] ? "on" : "", f[1]); b.addEventListener("click", function () { dipFilter = f[0]; renderDip(); }); chips.appendChild(b);
+    });
+    pane.appendChild(chips);
+    pane.appendChild(el("div", null)).id = "dip-list";
+    renderDipList();
+    if (S.player.union.length) pane.appendChild(el("div", "hint", "Union with: " + S.player.union.map(cname).join(", ")));
+  }
+  function renderDipList() {
+    const box = $("dip-list"); if (!box) return; box.innerHTML = "";
+    const q = dipSearch.toLowerCase();
+    dipData.filter(function (c) {
+      if (q && c.name.toLowerCase().indexOf(q) < 0) return false;
+      if (dipFilter === "near") return c.neighbour; if (dipFilter === "war") return c.war; if (dipFilter === "friends") return c.ally || c.trade;
+      return true;
+    }).slice(0, 80).forEach(function (c) {
+      const row = el("div", "row");
+      const l1 = el("div", "l1", "<b>" + esc(c.name) + "</b><span>" + (c.war ? '<span class="tag war">war</span>' : "") + (c.ally ? '<span class="tag ally">ally</span>' : "") + (c.trade ? '<span class="tag trade">trade</span>' : "") + '<span class="tag">' + esc(c.personality) + "</span></span>");
+      const rel = c.relation, relBar = '<div class="rel"><i style="left:50%;width:' + Math.abs(rel) / 2 + "%;" + (rel < 0 ? "transform:translateX(-100%);background:var(--red)" : "background:var(--green)") + '"></i></div>';
+      const l2 = el("div", "l2", relBar + "<span>rel " + rel + "</span><span>sick " + pct(c.infection, 0) + "%</span><span>army x" + c.power + "</span>");
+      row.appendChild(l1); row.appendChild(l2);
+      row.addEventListener("click", function () { dipOpen = dipOpen === c.id ? null : c.id; renderDipList(); });
+      box.appendChild(row);
+      if (dipOpen === c.id) {
+        const acts = el("div", "acts"), can = c.can, P = S.player;
+        const add = function (label, ok, why, action) {
+          const b = el("button", "btn", label); b.disabled = !ok; if (!ok) b.title = why;
+          b.addEventListener("click", function () { post({ action: action, country: c.id }).then(loadDip); }); acts.appendChild(b);
+        };
+        if (c.war) add("Ask for ceasefire ($" + c.ceasefire_cost + ")", true, "", "ceasefire");
+        add("Gift ($40, +8)", can.improve, "Not at war, and once every 14 days", "improve");
+        add("Trade deal ($60)", can.trade, "Needs relations 25+ and Economy level 2", "trade");
+        add("Alliance ($120)", can.alliance, "Needs a trade deal and relations 60+", "alliance");
+        add("Union (merge)", can.union, "Needs an alliance and relations 80+", "union");
+        add("Sell 60 doses", can.sell, "Needs Medicine level 3 and 60 doses", "sell_medicine");
+        box.appendChild(acts);
+        if (c.stolen) box.appendChild(el("div", "hint", "You hold " + c.stolen + " of their regions."));
+      }
+    });
+    if (!box.children.length) box.appendChild(el("div", "hint", "No country matches."));
+  }
+  function renderCountry() {
+    const pane = $("pane-country"); if (!S) return; pane.innerHTML = "";
+    const p = S.player, st = S.player_stats;
+    const kv = function (k, v) { return '<div class="kv">' + k + "<b>" + v + "</b></div>"; };
+    pane.innerHTML = kv("Country", esc(cname(me()))) + kv("Population", fmt(st.population)) + kv("Infected now", fmt(st.infected)) + kv("Dead", fmt(st.dead) + " (" + pct(st.dead_share, 1) + "%)") +
+      kv("Army strength", p.power) + kv("Regions held", st.regions) + kv("Income", (p.income >= 0 ? "+" : "") + p.income + " / day") + kv("At war with", p.war.length ? p.war.map(cname).join(", ") : "nobody") +
+      kv("Allies", p.allied.length ? p.allied.map(cname).join(", ") : "none") + kv("Trade partners", p.trade.length ? p.trade.map(cname).join(", ") : "none");
+    if (p.tech.medicine >= 3) pane.appendChild(el("div", "kv", "Medicine stock<b>" + fmt(p.medicine.stock) + " doses · " + p.medicine.production + "/day</b>"));
+    pane.appendChild(el("h4", null, "Your regions"));
+    S.regions.filter(function (r) { return r.owner === me(); }).sort(function (a, b) { return b.infection - a.infection; }).forEach(function (r) {
+      const row = el("div", "row", '<div class="l1"><b>' + esc(r.name) + (r.country_id !== me() ? " · " + esc(cname(r.country_id)) : "") + "</b><span>" + fmt(r.population) + '</span></div><div class="bar2"><i style="width:' + Math.min(100, r.infection * 100) + '%"></i></div>' +
+        '<div class="l2"><span>infected ' + pct(r.infection) + "%</span><span>dead " + pct(r.dead) + "%</span>" + (r.lockdown ? '<span class="tag">' + (r.lockdown === 2 ? "cordon" : "lockdown") + "</span>" : "") + "</div>");
+      row.addEventListener("click", function () { map.flyTo([r.lat, r.lng], 5, { duration: 0.8 }); setTimeout(function () { openRegion(r.id, [r.lat, r.lng]); }, 900); });
+      pane.appendChild(row);
+    });
+  }
+
+  // ======================= upgrades =======================
+  let selTrack = "medicine", selTier = 0;
+  function renderUpgrades() {
+    if (!S) return;
+    const box = $("tracks"); box.innerHTML = "";
+    Object.keys(S.tracks).forEach(function (k) {
+      const t = S.tracks[k], lvl = S.player.tech[k];
+      const tr = el("div", "track", '<h3>' + esc(t.name) + "<em>level " + lvl + " / 5</em></h3><p>" + esc(t.text) + "</p>");
+      const nodes = el("div", "nodes");
+      t.tiers.forEach(function (ti, i) {
+        if (i) nodes.appendChild(el("div", "link" + (i < lvl + 0 ? " built" : "")));
+        const n = el("button", "node" + (i < lvl ? " built" : i === lvl ? " next" : "") + (selTrack === k && selTier === i ? " sel" : ""), String(i + 1));
+        n.title = ti.name; n.addEventListener("click", function () { selTrack = k; selTier = i; renderUpgrades(); }); nodes.appendChild(n);
+      });
+      tr.appendChild(nodes); box.appendChild(tr);
+    });
+    const t = S.tracks[selTrack], ti = t.tiers[selTier], lvl = S.player.tech[selTrack];
+    const d = $("detail"); d.innerHTML = "";
+    d.appendChild(el("div", "meta", esc(t.name) + " · tier " + (selTier + 1)));
+    d.appendChild(el("h3", null, esc(ti.name)));
+    d.appendChild(el("p", null, esc(ti.text)));
+    const isNext = selTier === lvl, built = selTier < lvl, afford = S.player.budget >= ti.cost;
+    const b = el("button", "btn gold", built ? "Built" : "Build · $" + ti.cost);
+    b.disabled = built || !isNext || !afford || S.game_over;
+    b.addEventListener("click", function () { post({ action: "upgrade", track: selTrack }); });
+    d.appendChild(b);
+    d.appendChild(el("div", "hint", built ? "" : !isNext ? "Build the earlier tiers first." : !afford ? "You need $" + fmt(ti.cost - S.player.budget) + " more." : ""));
+    if (selTrack === "medicine") {
+      const m = S.player.medicine;
+      d.appendChild(el("h4", null, "Medicine stock"));
+      d.appendChild(el("div", "kv", "Doses in stock<b>" + fmt(m.stock) + "</b>"));
+      d.appendChild(el("div", "kv", "Production<b>" + m.production + " / day</b>"));
+      d.appendChild(el("div", "kv", "People harder to infect<b>" + pct(m.resistance, 0) + "%</b>"));
+      d.appendChild(el("div", "kv", "Doses sold abroad<b>" + fmt(m.exported) + "</b>"));
+      if (lvl >= 3) {
+        const seg = el("div", "seg");
+        [["keep", "Keep"], ["balanced", "Balanced"], ["sell", "Sell"]].forEach(function (o) {
+          const x = el("button", m.policy === o[0] ? "on" : "", o[1]); x.addEventListener("click", function () { post({ action: "medicine_policy", policy: o[0] }); }); seg.appendChild(x);
+        });
+        d.appendChild(seg);
+        d.appendChild(el("div", "hint", { keep: "Everything stays home. A big stockpile protects your people a little more.", balanced: "Keep a reserve of 200 doses, sell the rest.", sell: "Keep 40 doses, sell everything else. Fastest money, and it helps the world cure." }[m.policy]));
+      } else d.appendChild(el("div", "hint", "Reach tier 3 to produce doses."));
+    }
+    if (selTrack === "border") d.appendChild(el("div", "hint", "Screening applies even with your borders open, so you can keep trading."));
+  }
+
+  // ======================= news banner =======================
+  const bq = []; let bShowing = false;
+  function banner(e) { bq.push(e); if (bq.length > 3) bq.shift(); if (!bShowing) nextBanner(); }
+  function nextBanner() {
+    const e = bq.shift(); if (!e) { bShowing = false; return; }
+    bShowing = true;
+    $("bn-date").textContent = fmtDate(e.date); $("bn-text").textContent = e.text; $("banner").classList.add("on");
+    $("banner").style.borderLeftColor = e.imp ? "var(--red)" : "var(--blue)";
+    setTimeout(function () { $("banner").classList.remove("on"); setTimeout(nextBanner, 400); }, 4600);
+  }
+  $("banner").addEventListener("click", function () { openDrawer("news"); });
+
+  // ======================= flow =======================
+  function merge(s) {
+    if (s.full) { S = s; indexCountries(s.countries); s.regions.forEach(function (r) { R[r.id] = r; }); return; }
+    Object.keys(s).forEach(function (k) { if (["regions", "countries", "news_new", "traffic", "full"].indexOf(k) < 0) S[k] = s[k]; });
+    s.regions.forEach(function (u) { Object.assign(R[u.id], u); });
+    s.countries.forEach(function (u) { Object.assign(C[u.id], u); });
+    S.regions = Object.keys(R).map(function (k) { return R[k]; });
+  }
+  function apply(s) {
+    const prev = S ? S.turn : null;
+    merge(s);
+    if (s.full) { NEWS = (s.log || []).slice(); S.regions = s.regions; S.countries = s.countries; }
+    else (s.news_new || []).forEach(function (e) { if (!NEWS.length || e.id > NEWS[0].id) NEWS.unshift(e); });
+    (s.news_new || []).forEach(function (e) {
+      unread++; if (e.imp || (s.news_new.length < 3)) banner(e);
+      if (e.imp) { flash(); if (/attack|war|riot|uprising|seize|invade|collapse|fallen|dead/i.test(e.text)) shake(); }
+    });
+    if (unread && !$("drawer").classList.contains("open")) { const d = $("news-dot"); d.textContent = Math.min(unread, 99); d.classList.remove("hidden"); }
+    renderHud(); renderMap();
+    if ($("drawer").classList.contains("open")) { if (tab === "news") renderNews(); if (tab === "country") renderCountry(); if (tab === "dis") renderDisease(); }
+    if ($("upg-ov").classList.contains("open")) renderUpgrades();
+    if (prev !== null && s.turn !== prev) animateTraffic(s.traffic);
+    if (prev !== null && s.turn !== prev && speed > 0) startDayBar();
+    atmosphere(); syncEvent();
+    if (S.stopped_early && speed > 0) setSpeed(0);
+    if (S.game_over && !endShown) showEnd();
+  }
+  async function fetchState() {
+    try { const res = await api("/api/state", { cache: "no-store" }); if (res.data.started) apply(res.data); return res.data; }
+    catch (e) { toast("Cannot reach the server.", true); return null; }
+  }
+  async function post(payload) {
+    if (busy || !S) return;
+    busy = true; document.body.classList.add("busy");
+    try {
+      const res = await api("/api/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!res.ok) toast(res.data.error || "Action failed.", true);
+      else { apply(res.data); if (res.data.message) toast(res.data.message, false); }
+    } catch (e) { toast("Action failed: " + e.message, true); }
+    finally { busy = false; document.body.classList.remove("busy"); }
+    if (payload.action === "upgrade") await fetchState();     // refresh budget and levels right after a purchase
+  }
+  function setSpeed(n) {
+    speed = n; clearInterval(timer);
+    if (n > 0) timer = setInterval(function () {
+      if (busy || !S || S.game_over || S.pending || $("upg-ov").classList.contains("open")) return;
+      post({ action: "tick", days: SPEEDS[n].days });
+    }, SPEEDS[n].ms);
+    startDayBar();
+    document.querySelectorAll("#speed button").forEach(function (b) { b.classList.toggle("on", Number(b.dataset.s) === n); });
+  }
+  function clearAll() {
+    gen++;
+    [cells, dots, icons].forEach(function (o) { Object.keys(o).forEach(function (k) { map.removeLayer(o[k]); delete o[k]; }); });
+    [failed, styleKey, R].forEach(function (o) { Object.keys(o).forEach(function (k) { delete o[k]; }); });
+    map.closePopup();
+  }
+  async function enter(s) {
+    clearAll(); endShown = false; unread = 0; bq.length = 0; S = null; NEWS = []; decay = decayTarget = 0; evUid = null;
+    $("end").classList.remove("open", "victory", "defeat");
+    $("menu").classList.add("hidden"); $("hud").classList.remove("hidden");
+    $("drawer").classList.remove("open");
+    await worldReady;
+    apply(s); lastTurn = s.turn; buildCells(); zoomClass();
+    const pts = S.regions.filter(function (r) { return r.owner === me(); }).map(function (r) { return [r.lat, r.lng]; });
+    if (pts.length) map.flyToBounds(L.latLngBounds(pts).pad(1.2), { maxZoom: 5, paddingBottomRight: [0, 90], duration: 1.2 });
+    setSpeed(0);
+    toast("Day 0, " + fmtDate(s.date) + ". Press play when you are ready: one day passes every 25 seconds.", false);
+  }
+  function showEnd() {
+    endShown = true; setSpeed(0);
+    const st = S.player_stats;
+    $("end").classList.add(S.result);
+    $("end-title").textContent = S.result === "victory" ? "VICTORY" : "DEFEAT";
+    $("end-text").textContent = S.result_text;
+    $("end-grid").innerHTML = [["Days", S.day], ["Date", fmtDate(S.date)], ["Regions", st.regions], ["Population", fmt(st.population)], ["Dead", fmt(st.dead)], ["Upgrades", Object.values(S.player.tech).reduce(function (a, b) { return a + b; }, 0)]]
+      .map(function (x) { return "<div><b>" + esc(x[1]) + "</b>" + esc(x[0]) + "</div>"; }).join("");
+    setTimeout(function () { $("end").classList.add("open"); }, 500);
+  }
+
+  // ======================= start menu =======================
+  function fillCountries() {
+    const sel = $("sel-country"), q = $("country-search").value.toLowerCase(); sel.innerHTML = "";
+    menuCountries.filter(function (c) { return c.name.toLowerCase().indexOf(q) >= 0; }).forEach(function (c) {
+      const o = el("option", null, esc(c.name)); o.value = c.id; if (c.id === selCountry) o.selected = true; sel.appendChild(o);
+    });
+    if (!sel.value && sel.options.length) { sel.options[0].selected = true; selCountry = sel.options[0].value; }
+  }
+  function buildMenu(list) {
+    menuCountries = list.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    selCountry = menuCountries.some(function (c) { return c.id === "RO"; }) ? "RO" : menuCountries[0].id;
+    fillCountries();
+    $("sel-country").addEventListener("change", function () { selCountry = this.value; });
+    $("country-search").addEventListener("input", fillCountries);
+    const box = $("dopts"); box.innerHTML = "";
+    DISEASES.forEach(function (d) {
+      const b = el("button", "dopt", "<b>" + d.name + "</b><span>" + d.text + "</span>"); b.setAttribute("aria-pressed", String(d.id === selDisease));
+      b.addEventListener("click", function () { selDisease = d.id; box.querySelectorAll(".dopt").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); }); box.appendChild(b);
+    });
+    $("btn-start").disabled = false;
+    $("menu-note").textContent = "The game starts today, " + fmtDate(new Date().toISOString().slice(0, 10).replace(/-/g, "-")) + ". One turn is one day.";
+  }
+  function showMenu() { $("hud").classList.add("hidden"); $("menu").classList.remove("hidden"); $("btn-start").disabled = false; $("btn-start").textContent = "START"; $("menu-err").textContent = ""; }
+  $("btn-start").addEventListener("click", async function () {
+    const b = this; b.disabled = true; b.textContent = "STARTING…"; $("menu-err").textContent = ""; sndStart();
+    try {
+      const res = await api("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ country: selCountry, disease: selDisease }) });
+      if (!res.ok) throw new Error(res.data.error || "Could not start.");
+      await enter(res.data);
+    } catch (e) { $("menu-err").textContent = e.message; b.disabled = false; b.textContent = "START"; }
+  });
+  $("btn-again").addEventListener("click", function () { $("end").classList.remove("open"); clearAll(); S = null; showMenu(); });
+
+  // ======================= wiring =======================
+  $("btn-close").addEventListener("click", function () { post({ action: "close_borders" }); });
+  $("btn-open").addEventListener("click", function () { post({ action: "open_borders" }); });
+  $("btn-upg").addEventListener("click", function () { renderUpgrades(); $("upg-ov").classList.add("open"); });
+  $("upg-x").addEventListener("click", function () { $("upg-ov").classList.remove("open"); });
+  $("upg-ov").addEventListener("click", function (e) { if (e.target === $("upg-ov")) $("upg-ov").classList.remove("open"); });
+  document.querySelectorAll("[data-open]").forEach(function (b) { b.addEventListener("click", function () { openDrawer(b.dataset.open); }); });
+  document.querySelectorAll(".tabs button[data-t]").forEach(function (b) { b.addEventListener("click", function () { openDrawer(b.dataset.t); }); });
+  $("drawer-x").addEventListener("click", function () { $("drawer").classList.remove("open"); });
+  document.querySelectorAll("#speed button").forEach(function (b) { b.addEventListener("click", function () { setSpeed(Number(b.dataset.s)); }); });
+  $("dock-toggle").addEventListener("click", function () { const c = document.body.classList.toggle("collapsed"); this.setAttribute("aria-expanded", String(!c)); });
+  $("snd").addEventListener("click", sndToggle);
+  document.querySelectorAll("#chan button").forEach(function (b) {
+    b.addEventListener("click", function () { post({ action: b.classList.contains("on") ? "open_borders" : "close_borders", mode: b.dataset.m }); });
+  });
+  document.addEventListener("keydown", function (e) {
+    if ($("ev").classList.contains("open") && evPending) {
+      if ($("ev-choices").classList.contains("hidden")) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); skipType(); } return; }
+      const n = parseInt(e.key, 10);
+      if (n >= 1 && n <= evPending.choices.length && evPending.choices[n - 1].can) chooseEvent(n - 1);
+      else if ((e.key === "Enter" || e.key === " ") && evPending.kind === "card") { e.preventDefault(); chooseEvent(0); }
+      return;
+    }
+    if (e.key === "Escape") { $("upg-ov").classList.remove("open"); $("drawer").classList.remove("open"); map.closePopup(); }
+    if (e.key === " " && S && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) && !$("menu").classList.contains("hidden") === false) { e.preventDefault(); setSpeed(speed ? 0 : 1); }
+  });
+
+
+  // ======================= atmosphere: the world decays =======================
+  const clamp = function (x, a, b) { return Math.max(a, Math.min(b, x)); };
+  function mix(a, b, t) {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const ch = function (sh) { return Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t); };
+    return "rgb(" + ch(16) + "," + ch(8) + "," + ch(0) + ")";
+  }
+  let decay = 0, decayTarget = 0;
+  function atmosphere() { if (S) decayTarget = clamp(S.world_dead_share * 8 + S.world_infected * 0.6, 0, 1); }
+  function decayStep() {                      // smoothing: the world fades, it never jumps
+    decay += (decayTarget - decay) * 0.04;
+    document.documentElement.style.setProperty("--decay", decay.toFixed(3));
+    map.getContainer().style.background = "radial-gradient(ellipse at 50% 40%, " + mix("#102235", "#2b1216", decay) + " 0%, " + mix("#0b1a2a", "#1a0c0f", decay) + " 55%, " + mix("#070f18", "#0b0507", decay) + " 100%)";
+    sndUpdate(decay);
+  }
+  setInterval(decayStep, 250);
+
+  const ash = { cv: $("ash"), ctx: null, parts: [] };
+  function ashSize() { ash.cv.width = window.innerWidth; ash.cv.height = window.innerHeight; }
+  function ashFrame() {
+    requestAnimationFrame(ashFrame);
+    if (!S || document.hidden || reduced) return;
+    const c = ash.ctx || (ash.ctx = ash.cv.getContext && ash.cv.getContext("2d"));
+    if (!c) return;
+    const want = Math.floor(8 + 190 * decay), W = ash.cv.width, H = ash.cv.height;
+    while (ash.parts.length < want) ash.parts.push({ x: Math.random() * W, y: Math.random() * H, r: 0.6 + Math.random() * 1.8, vy: 0.15 + Math.random() * 0.5, vx: -0.15 + Math.random() * 0.3, a: 0.15 + Math.random() * 0.4, e: Math.random() < 0.12, ph: Math.random() * 6 });
+    ash.parts.length = Math.min(ash.parts.length, want);
+    c.clearRect(0, 0, W, H);
+    ash.parts.forEach(function (p) {
+      p.y += p.vy; p.ph += 0.01; p.x += p.vx + Math.sin(p.ph) * 0.2;
+      if (p.y > H + 4) { p.y = -4; p.x = Math.random() * W; }
+      if (p.x < -4) p.x = W + 4; if (p.x > W + 4) p.x = -4;
+      c.fillStyle = p.e ? "rgba(230,120,60," + p.a + ")" : "rgba(190,185,180," + (p.a * 0.7) + ")";
+      c.beginPath(); c.arc(p.x, p.y, p.r, 0, 6.283); c.fill();
+    });
+  }
+  window.addEventListener("resize", ashSize); ashSize(); requestAnimationFrame(ashFrame);
+
+  function flash() {
+    const f = $("flash"); if (!f.animate || reduced) return;
+    f.style.background = "radial-gradient(ellipse at center, transparent 30%, rgba(170,20,30,.55) 100%)";
+    f.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1100, easing: "ease-out" });
+  }
+  function shake() {
+    const m = map.getContainer(); if (!m.animate || reduced) return;
+    m.animate([{ transform: "translate(0,0)" }, { transform: "translate(-5px,3px)" }, { transform: "translate(4px,-3px)" }, { transform: "translate(-3px,-2px)" }, { transform: "translate(0,0)" }], { duration: 420 });
+  }
+  function startDayBar() {
+    const b = $("dayprog"); b.style.transition = "none"; b.style.width = "0%";
+    if (!speed) return;
+    void b.offsetWidth; b.style.transition = "width " + SPEEDS[speed].ms + "ms linear"; b.style.width = "100%";
+  }
+
+  // ======================= sound (synthesised, no files) =======================
+  const SND = { on: true, ctx: null };
+  try { if (window.localStorage.getItem("outbreak-sound") === "0") SND.on = false; } catch (e) { /* private mode */ }
+  function sndStart() {
+    if (!SND.on || SND.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    try {
+      const c = SND.ctx = new AC();
+      SND.master = c.createGain(); SND.master.gain.value = 0.5; SND.master.connect(c.destination);
+      SND.filter = c.createBiquadFilter(); SND.filter.type = "lowpass"; SND.filter.frequency.value = 220; SND.filter.connect(SND.master);
+      SND.dg = c.createGain(); SND.dg.gain.value = 0.0; SND.dg.connect(SND.filter);
+      [[55, "sine", 0], [82.4, "sawtooth", 4], [110.5, "triangle", -6]].forEach(function (o) {
+        const osc = c.createOscillator(); osc.type = o[1]; osc.frequency.value = o[0]; osc.detune.value = o[2]; osc.connect(SND.dg); osc.start();
+      });
+      const lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 70; lfo.connect(lg); lg.connect(SND.filter.frequency); lfo.start();
+      SND.dg.gain.linearRampToValueAtTime(0.06, c.currentTime + 4);
+      setInterval(heartbeat, 1000);
+    } catch (e) { SND.ctx = null; }
+  }
+  function sndUpdate(d) {
+    if (!SND.ctx || !SND.on) return;
+    const t = SND.ctx.currentTime;
+    SND.filter.frequency.setTargetAtTime(180 + d * 700, t, 2);
+    SND.dg.gain.setTargetAtTime(0.05 + d * 0.10, t, 2);
+  }
+  let beatAt = 0;
+  function thump(t, g) {
+    const c = SND.ctx, o = c.createOscillator(), a = c.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(34, t + 0.16);
+    a.gain.setValueAtTime(0.0001, t); a.gain.exponentialRampToValueAtTime(g, t + 0.02); a.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    o.connect(a); a.connect(SND.master); o.start(t); o.stop(t + 0.25);
+  }
+  function heartbeat() {
+    if (!SND.ctx || !SND.on || decay < 0.12 || document.hidden) return;
+    const now = SND.ctx.currentTime; if (now < beatAt) return;
+    beatAt = now + 1.4 - decay * 0.8; thump(now, 0.18 + decay * 0.25); thump(now + 0.2, 0.12 + decay * 0.18);
+  }
+  function sting(kind) {
+    if (!SND.ctx || !SND.on) return;
+    const c = SND.ctx, t = c.currentTime, o = c.createOscillator(), a = c.createGain();
+    o.type = "triangle";
+    const f = kind === "card" ? [196, 147] : [130, 87];
+    o.frequency.setValueAtTime(f[0], t); o.frequency.exponentialRampToValueAtTime(f[1], t + 1.2);
+    a.gain.setValueAtTime(0.0001, t); a.gain.exponentialRampToValueAtTime(0.22, t + 0.05); a.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    o.connect(a); a.connect(SND.master); o.start(t); o.stop(t + 1.6);
+  }
+  function sndToggle() {
+    SND.on = !SND.on;
+    try { window.localStorage.setItem("outbreak-sound", SND.on ? "1" : "0"); } catch (e) { /* ignore */ }
+    if (SND.on) { if (!SND.ctx) sndStart(); else if (SND.ctx.resume) SND.ctx.resume(); } else if (SND.ctx && SND.ctx.suspend) SND.ctx.suspend();
+    $("snd").classList.toggle("off", !SND.on);
+  }
+  $("snd").classList.toggle("off", !SND.on);
+
+  // ======================= decisions and chronicle cards =======================
+  const EMBLEM = {
+    outbreak: '<circle cx="32" cy="32" r="10"/><path d="M32 8v12M32 44v12M8 32h12M44 32h12M15 15l8 8M41 41l8 8M49 15l-8 8M23 41l-8 8"/><circle cx="32" cy="7" r="2.6"/><circle cx="32" cy="57" r="2.6"/><circle cx="7" cy="32" r="2.6"/><circle cx="57" cy="32" r="2.6"/>',
+    fire: '<path d="M32 6c3 10 14 14 14 28a14 14 0 01-28 0c0-8 4-11 7-16 1 5 4 7 7 7-2-6-2-13 0-19z"/>',
+    shield: '<path d="M32 6l20 8v14c0 14-9 25-20 30-11-5-20-16-20-30V14z"/><path d="M32 22v20M22 32h20"/>',
+    crown: '<path d="M8 46l4-26 14 14 6-18 6 18 14-14 4 26z"/><path d="M10 54h44"/>',
+    flask: '<path d="M24 6h16M27 6v18L10 52a4 4 0 004 6h36a4 4 0 004-6L37 24V6"/><path d="M18 42h28"/>',
+    wave: '<path d="M6 20q6-8 13 0t13 0t13 0t13 0M6 34q6-8 13 0t13 0t13 0t13 0M6 48q6-8 13 0t13 0t13 0t13 0"/>',
+    skull: '<path d="M32 6c-13 0-22 8-22 20 0 7 4 11 8 14v10h8v-5h4v5h8v-5h4v5h8V40c4-3 8-7 8-14C54 14 45 6 32 6z"/><circle cx="23" cy="28" r="5"/><circle cx="41" cy="28" r="5"/>'
+  };
+  function emblem(m) { return '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">' + (EMBLEM[m] || EMBLEM.skull) + "</svg>"; }
+
+  let evUid = null, evPending = null, typeT = null;
+  function skipType() { if (typeT) { clearInterval(typeT); typeT = null; $("ev-text").textContent = evPending.text; revealChoices(evPending); } }
+  function showEvent(p) {
+    if (evUid === p.uid) return;
+    evUid = p.uid; evPending = p; setSpeed(0);
+    $("ev").className = "ov open m-" + p.mood + " k-" + p.kind;
+    $("ev-date").textContent = fmtDate(S.date, true) + " · day " + S.day;
+    $("ev-kind").textContent = p.kind === "card" ? "Chronicle" : "Decision" + (p.queued ? " · " + p.queued + " more waiting" : "");
+    $("ev-emblem").innerHTML = emblem(p.mood);
+    $("ev-title").textContent = p.title;
+    const box = $("ev-choices"); box.innerHTML = ""; box.classList.add("hidden");
+    const txt = $("ev-text"); txt.textContent = ""; clearInterval(typeT); typeT = null;
+    txt.onclick = skipType;
+    sndStart(); sting(p.kind === "card" ? "card" : "bad");
+    if (reduced) { txt.textContent = p.text; revealChoices(p); return; }
+    let i = 0;
+    typeT = setInterval(function () { i += 2; txt.textContent = p.text.slice(0, i); if (i >= p.text.length) skipType(); }, 22);
+  }
+  function revealChoices(p) {
+    const box = $("ev-choices"); box.innerHTML = ""; box.classList.remove("hidden");
+    p.choices.forEach(function (c) {
+      const b = el("button", "evc", '<span class="n">' + (c.i + 1) + '</span><span class="lab">' + esc(c.label) + "</span>" + (c.cost ? '<span class="cost">$' + c.cost + "</span>" : "<span></span>") + (c.hint ? "<small>" + esc(c.hint) + "</small>" : ""));
+      b.disabled = !c.can; if (!c.can) b.title = "You cannot afford this";
+      b.addEventListener("click", function () { chooseEvent(c.i); });
+      box.appendChild(b);
+    });
+    const first = box.querySelector("button:not(:disabled)"); if (first) first.focus();
+  }
+  async function chooseEvent(i) {
+    if (busy) return;
+    await post({ action: "choose", index: i });
+  }
+  function syncEvent() {
+    if (S && S.pending) {
+      if (evUid !== S.pending.uid) {
+        const p = S.pending;
+        setTimeout(function () { if (S && S.pending && S.pending.uid === p.uid) showEvent(p); }, evUid === null ? 0 : 400);
+      }
+    } else if (evUid !== null) {
+      evUid = null; evPending = null; clearInterval(typeT); typeT = null; $("ev").classList.remove("open");
+    }
+  }
+
+  // ======================= disease dossier =======================
+  const PHASE_TEXT = { 1: "A few clusters. The world has not noticed yet.", 2: "Several countries are fighting it. Borders are closing.", 3: "On every continent. Travel is collapsing.", 4: "Governments are failing. The dead outnumber what anyone can count." };
+  function renderDisease() {
+    const pane = $("pane-dis"); if (!S) return;
+    const kv = function (k, v) { return '<div class="kv">' + k + "<b>" + v + "</b></div>"; };
+    pane.innerHTML = kv("Pathogen", esc(S.disease_name) + " (" + esc(S.disease) + ")") + kv("Phase", S.phase + " of 4 · " + esc(S.phase_name)) +
+      '<div class="hint" style="margin:4px 0 8px">' + esc(PHASE_TEXT[S.phase]) + "</div>" +
+      kv("Countries infected", S.infected_countries) + kv("World infected", pct(S.world_infected, 1) + "%") + kv("Dead worldwide", fmt(S.world_dead)) + kv("Nations fallen", S.fallen) +
+      kv("Cure", S.cure_started ? pct(S.cure_progress, 1) + "%" : "not started");
+    pane.appendChild(el("h4", null, "Mutations"));
+    if (!S.mutations.length) pane.appendChild(el("div", "hint", "None yet. A new one appears every two or three months."));
+    S.mutations.forEach(function (m) { pane.appendChild(el("div", "news-item imp", "<b>" + esc(m.name) + "</b><br>" + esc(m.text))); });
+    pane.appendChild(el("h4", null, "Your active decisions"));
+    if (!S.mods.length) pane.appendChild(el("div", "hint", "None."));
+    S.mods.forEach(function (m) { pane.appendChild(el("div", "news-item", "<b>" + esc(m.name) + "</b> · " + m.days + " days left<br>" + esc(m.text))); });
+  }
+
+  // ======================= boot =======================
+  worldReady = loadWorld();
+  api("/api/state", { cache: "no-store" }).then(function (res) {
+    const s = res.data;
+    if (s.started) { buildMenu(s.countries); enter(s); } else buildMenu(s.countries);
+  }).catch(function () { $("menu-err").textContent = "Cannot reach the server. Is app.py running?"; });
+})();
+</script>
+</body>
+</html>

@@ -221,6 +221,59 @@
   .evc .cost { font: 600 15px var(--cond); color: var(--gold); } .evc small { grid-column: 2 / -1; font-size: 12.5px; color: var(--mut); }
   #ev.k-card .evc { text-align: center; grid-template-columns: 1fr; } #ev.k-card .evc .n { display: none; }
 
+
+  /* ---------- bar fix, top-right buttons ---------- */
+  #bar { overflow-x: auto; overflow-y: hidden; gap: 18px; }
+  .st { flex: none; }
+  #st-dis { cursor: pointer; } #st-dis:hover .v { color: #ff9aa0; }
+  #topr { position: fixed; top: 10px; right: 10px; z-index: 1000; display: flex; gap: 6px; }
+  #topr .btn { height: 36px; background: var(--panel); }
+  @media (max-width: 1250px) { #bar { gap: 12px; padding: 0 10px; } #bar .btn { padding: 0 9px; font-size: 12px; } .meter { width: 64px; } }
+
+  /* ---------- difficulty, continue ---------- */
+  .menu h2.sp { margin-top: 18px; }
+  .diffs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .dif { padding: 9px 4px; text-align: center; background: none; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; font: 600 15px var(--cond); letter-spacing: .08em; text-transform: uppercase; color: var(--mut); }
+  .dif:hover { background: var(--panel); color: #fff; } .dif[aria-pressed=true] { color: #fff; background: #1d1519; border-color: var(--red); }
+  .dif.d-casual[aria-pressed=true] { border-color: var(--green); background: #101e18; } .dif.d-hard[aria-pressed=true] { border-color: var(--amber); background: #221a10; } .dif.d-super[aria-pressed=true] { background: #2a1014; }
+  #diff-text { min-height: 20px; margin-top: 6px; color: var(--mut); font-size: 13px; }
+  #btn-continue { margin-top: 18px; width: 100%; height: 44px; background: none; border: 1px solid var(--blue); border-radius: 3px; color: #fff; font: 600 15px var(--cond); letter-spacing: .12em; cursor: pointer; text-transform: uppercase; }
+  #btn-continue:hover { background: #172a45; }
+
+  /* ---------- war campaigns ---------- */
+  #camps { position: fixed; top: 64px; left: 58px; z-index: 1000; display: grid; gap: 6px; width: 280px; }
+  .camp { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--red); border-radius: 3px; padding: 7px 10px; cursor: pointer; }
+  .camp b { color: #fff; font-weight: 500; } .camp small { display: block; color: var(--mut); font-size: 12px; }
+  .front { position: relative; height: 6px; margin: 6px 0 4px; background: #223243; } .front i { position: absolute; inset: 0 auto 0 0; background: var(--red); } .front u { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; }
+  .camp-ring { width: 26px; height: 26px; border: 2px solid var(--red); border-radius: 50%; animation: campring 1.6s ease-out infinite; }
+  @keyframes campring { from { transform: scale(.5); opacity: 1; } to { transform: scale(2.4); opacity: 0; } }
+
+  /* ---------- the upgrade tree ---------- */
+  .sheet.tree { width: min(1000px, 100%); overflow-y: auto; }
+  .ttabs { display: flex; border-bottom: 1px solid var(--line); }
+  .ttabs button { flex: 1; padding: 11px 4px; background: none; border: 0; border-bottom: 3px solid transparent; font: 600 14px var(--cond); letter-spacing: .1em; text-transform: uppercase; color: var(--mut); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
+  .ttabs button:hover { color: #fff; } .ttabs button.on { color: #fff; border-bottom-color: var(--acc); }
+  .ttabs svg { width: 16px; height: 16px; fill: none; stroke: var(--acc); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .ttabs em { font-style: normal; font-size: 12px; color: var(--mut); }
+  .graph { position: relative; height: 330px; margin: 12px 18px 0; background: radial-gradient(ellipse at 50% 50%, #13212f, #0a131c 72%); border: 1px solid var(--line); border-radius: 3px; }
+  #tlines { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #tlines line { stroke: #2a4157; stroke-width: 2; vector-effect: non-scaling-stroke; } #tlines line.built { stroke: var(--acc); stroke-width: 3; }
+  .tn { position: absolute; width: 58px; height: 58px; transform: translate(-50%, -50%); border-radius: 50%; background: #0d1721; border: 2px solid #2c4057; color: #6f8399; display: grid; place-items: center; cursor: pointer; padding: 0; font: 700 19px var(--cond); }
+  .tn.branch { width: 46px; height: 46px; }
+  .tn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .tn:hover { color: #fff; border-color: #5a7590; }
+  .tn.built { background: var(--acc); border-color: #fff; color: #06101a; box-shadow: 0 0 16px var(--acc); }
+  .tn.avail { border-color: var(--gold); color: var(--gold); animation: availp 1.8s infinite; }
+  @keyframes availp { 0%, 100% { box-shadow: 0 0 0 0 rgba(217,169,58,0); } 50% { box-shadow: 0 0 0 7px rgba(217,169,58,.2); } }
+  .tn.blocked { border-style: dashed; border-color: #7d1d24; color: #7d1d24; opacity: .65; }
+  .tn.sel { outline: 2px solid #fff; outline-offset: 3px; }
+  .tn-label { position: absolute; transform: translate(-50%, 0); font: 600 11px var(--cond); letter-spacing: .07em; text-transform: uppercase; color: #8ea1b5; white-space: nowrap; pointer-events: none; }
+  .tdetail { display: grid; grid-template-columns: 1fr auto; gap: 4px 24px; padding: 14px 18px 18px; align-items: start; }
+  .tdetail h3 { margin: 0; font: 700 26px var(--cond); color: #fff; letter-spacing: .03em; }
+  .tdetail .meta { font: 600 12px var(--cond); letter-spacing: .12em; text-transform: uppercase; color: var(--mut); }
+  .tdetail p { margin: 6px 0 0; color: #b9c6d4; }
+  .tdetail .buy-col { display: grid; gap: 6px; justify-items: end; min-width: 190px; }
+  .tdetail .wide { grid-column: 1 / -1; padding-top: 10px; border-top: 1px solid #1b2a3a; margin-top: 8px; }
+
   @media (max-width: 1100px) { #banner { top: 60px; max-width: calc(100vw - 24px); } }
   @media (max-width: 900px) { #bar { gap: 12px; overflow-x: auto; } .menu .cols, .upg { grid-template-columns: 1fr; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -246,6 +299,10 @@
         <div id="dopts"></div>
       </div>
     </div>
+    <h2 class="sp">Difficulty</h2>
+    <div class="diffs" id="diffs"></div>
+    <div id="diff-text"></div>
+    <button id="btn-continue" class="hidden"></button>
     <button id="btn-start" disabled>START</button>
     <div id="menu-note"></div>
     <div id="menu-err"></div>
@@ -266,6 +323,12 @@
     <button id="snd" title="Sound"><svg viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 5.5c1.3 1.3 1.3 3.7 0 5M13 3.5c2.6 2.6 2.6 6.4 0 9" stroke="currentColor" fill="none" stroke-width="1.3"/></svg></button>
   </div>
   <div id="building" class="hidden">Mapping regions…</div>
+  <div id="camps"></div>
+  <div id="topr">
+    <button class="btn" data-open="dip">Diplomacy</button>
+    <button class="btn" data-open="country">Country</button>
+    <button class="btn" data-open="news">News<span class="dot hidden" id="news-dot">0</span></button>
+  </div>
   <div id="banner"><small id="bn-date"></small><span id="bn-text"></span></div>
 
   <div id="drawer">
@@ -285,8 +348,7 @@
   <div id="dock">
     <button id="dock-toggle" aria-label="Show or hide the bar" aria-expanded="true"><svg viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 1l6 6 6-6"/></svg></button>
     <div id="bar">
-      <div class="st"><label>Disease</label><div class="v" id="s-disease">–</div><div class="s" id="s-dtype"></div></div>
-      <div class="st"><label>Phase</label><div class="v" id="s-phase">1 · Outbreak</div><div class="s" id="s-mut"></div></div>
+      <div class="st" id="st-dis" title="Open the disease dossier"><label>Disease</label><div class="v" id="s-disease">–</div><div class="s"><span id="s-phase">1 · Outbreak</span> · <span id="s-mut"></span><span id="s-dtype" class="hidden"></span></div></div>
       <div class="st"><label>Cure</label><div class="v" id="s-cure">0%</div><div class="meter"><i id="m-cure"></i></div></div>
       <div class="st"><label>World infected</label><div class="v" id="s-world">0%</div><div class="meter"><i id="m-world" style="background:var(--red)"></i></div></div>
       <div class="sep"></div>
@@ -302,18 +364,17 @@
       <button class="btn" id="btn-open">Open all</button>
       <div class="sep"></div>
       <button class="btn gold" id="btn-upg">Strategy / Upgrades</button>
-      <button class="btn" data-open="dip">Diplomacy</button>
-      <button class="btn" data-open="country">Country</button>
-      <button class="btn" data-open="news">News<span class="dot hidden" id="news-dot">0</span></button>
     </div>
   </div>
 </div>
 
 <!-- ============ UPGRADES ============ -->
 <div id="upg-ov" class="ov" role="dialog" aria-modal="true" aria-labelledby="upg-title">
-  <div class="sheet">
+  <div class="sheet tree">
     <div class="sh-head"><h2 id="upg-title">Strategy / Upgrades</h2><div><span class="num" style="color:var(--gold);font-size:22px;margin-right:16px" id="u-budget">$ 0</span><button class="x-btn" id="upg-x" aria-label="Close">×</button></div></div>
-    <div class="upg"><div class="tracks" id="tracks"></div><div class="detail" id="detail"></div></div>
+    <div class="ttabs" id="ttabs"></div>
+    <div class="graph" id="graph"><svg id="tlines" viewBox="0 0 100 100" preserveAspectRatio="none"></svg><div id="tnodes"></div></div>
+    <div class="tdetail" id="tdetail"></div>
   </div>
 </div>
 
@@ -376,7 +437,7 @@
   let unread = 0, busy = false, speed = 0, timer = null, gen = 0, lastTurn = 0, endShown = false;
   let menuCountries = [], selCountry = null, selDisease = "random";
   const C = {}, C3 = {}, shapes = {}, R = {};          // countries by id / iso3, country shapes, regions by id
-  const cells = {}, dots = {}, icons = {}, failed = {}, styleKey = {};
+  const cells = {}, dots = {}, icons = {}, failed = {}, styleKey = {}, campMk = {};
   let worldReady = Promise.resolve();
 
   function indexCountries(list) {
@@ -520,7 +581,22 @@
         dots[r.id] = m;
       } else { m.setStyle(st); m.setRadius(st.radius); }
     });
+    const live = {};
+    (S.campaigns || []).forEach(function (c) {
+      live[c.rid] = 1; const rg = R[c.rid]; if (!rg || campMk[c.rid]) return;
+      campMk[c.rid] = L.marker([rg.lat, rg.lng], { pane: "traffic", interactive: false, icon: L.divIcon({ className: "", html: '<div class="camp-ring"></div>', iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(map);
+    });
+    Object.keys(campMk).forEach(function (k) { if (!live[k]) { map.removeLayer(campMk[k]); delete campMk[k]; } });
     renderIcons();
+  }
+  function renderCamps() {
+    const box = $("camps"); box.innerHTML = "";
+    (S.campaigns || []).forEach(function (c) {
+      const w = clamp((c.front + 40) / 140 * 100, 0, 100);
+      const d = el("div", "camp", "<b>" + esc(c.region) + "</b><small>" + esc(c.country) + " · " + esc(c.force) + " · day " + c.day + '</small><div class="front"><i style="width:' + w + '%"></i><u style="left:28.6%"></u></div><small>' + fmt(c.dead) + " of yours dead · about " + fmt(c.enemy_dead) + " of theirs</small>");
+      d.addEventListener("click", function () { const rg = R[c.rid]; if (rg) map.flyTo([rg.lat, rg.lng], 5, { duration: 0.8 }); });
+      box.appendChild(d);
+    });
   }
   function iconHtml(kind, closed) { return '<div class="tr ' + kind + (closed ? " closed" : "") + '">' + (kind === "air" ? PLANE : SHIP) + "</div>"; }
   function setIcon(key, kind, ll, closed) {
@@ -612,11 +688,17 @@
   }
   function actBtn(parent, label, cls, fn) { const b = el("button", "btn " + (cls || ""), label); b.addEventListener("click", fn); parent.appendChild(b); return b; }
   function foreignActions(acts, r, i) {
-    if (i.allied) { acts.appendChild(el("div", "small", "Your ally. You cannot invade them.")); }
+    if (i.allied) { acts.appendChild(el("div", "small", "Your ally. You cannot attack them.")); }
     else if (i.truce) { acts.appendChild(el("div", "small", "A ceasefire is in force.")); }
+    else if (i.campaign) { acts.appendChild(el("div", "small", "Your army is already fighting here.")); }
+    else if (i.campaigns_full) { acts.appendChild(el("div", "small", "Your army is already fighting two campaigns.")); }
     else {
-      actBtn(acts, "Invade ($" + fmt(i.invade_cost) + ", " + pct(i.invade_chance, 0) + "% chance)", "red", function () { map.closePopup(); post({ action: "invade", region_id: r.id }); });
-      acts.appendChild(el("div", "small", (i.adjacent ? "Next to your land. " : "Overseas assault. ") + "Taking land means war, unrest and revenge."));
+      acts.appendChild(el("div", "small", (i.adjacent ? "Next to your land. " : "Overseas assault. ") + "How much do you commit?"));
+      i.force_options.forEach(function (o) {
+        const b = actBtn(acts, o.label + " · $" + fmt(o.cost) + " · " + pct(o.chance, 0) + "%", o.key === "allin" ? "red" : "", function () { map.closePopup(); post({ action: "invade", region_id: r.id, force: o.key }); });
+        b.title = o.text;
+      });
+      acts.appendChild(el("div", "small", "A campaign lasts days, asks for hard decisions and costs lives."));
     }
     actBtn(acts, "Diplomacy with " + cname(r.owner), "", function () { map.closePopup(); openDrawer("dip", r.owner); });
   }
@@ -670,7 +752,7 @@
     const closed = p.closed || [];
     document.querySelectorAll("#chan button").forEach(function (b) { b.classList.toggle("on", closed.indexOf(b.dataset.m) >= 0); });
     $("btn-close").disabled = closed.length === 3; $("btn-open").disabled = closed.length === 0;
-    const ph = $("s-phase"); ph.textContent = s.phase + " · " + s.phase_name; ph.className = "v ph" + s.phase;
+    const ph = $("s-phase"); ph.textContent = s.phase + " · " + s.phase_name; ph.className = "ph" + s.phase;
     $("s-mut").textContent = s.mutations.length ? s.mutations.length + (s.mutations.length === 1 ? " mutation" : " mutations") : "no mutations yet";
     lastBudget = p.budget;
     $("u-budget").textContent = "$ " + fmt(p.budget);
@@ -757,6 +839,13 @@
       kv("Army strength", p.power) + kv("Regions held", st.regions) + kv("Income", (p.income >= 0 ? "+" : "") + p.income + " / day") + kv("At war with", p.war.length ? p.war.map(cname).join(", ") : "nobody") +
       kv("Allies", p.allied.length ? p.allied.map(cname).join(", ") : "none") + kv("Trade partners", p.trade.length ? p.trade.map(cname).join(", ") : "none");
     if (p.tech.medicine >= 3) pane.appendChild(el("div", "kv", "Medicine stock<b>" + fmt(p.medicine.stock) + " doses · " + p.medicine.production + "/day</b>"));
+    pane.appendChild(el("h4", null, "Cabinet"));
+    (S.advisors || []).forEach(function (a) {
+      const col = a.loyalty < 25 ? "var(--red)" : a.loyalty < 50 ? "var(--amber)" : "var(--green)";
+      pane.appendChild(el("div", "row", '<div class="l1"><b>' + esc(a.name) + "</b><span>" + esc(a.title) + '</span></div><div class="bar2"><i style="width:' + a.loyalty + "%;background:" + col + '"></i></div><div class="l2"><span>loyalty ' + a.loyalty + "</span><span>" + esc(a.effect) + "</span></div>"));
+    });
+    pane.appendChild(el("div", "kv", "Standing abroad<b>" + (S.player.reputation > 0 ? "+" : "") + S.player.reputation + "</b>"));
+    pane.appendChild(el("div", "kv", "Soldiers lost in wars<b>" + fmt(S.player.army_dead) + "</b>"));
     pane.appendChild(el("h4", null, "Your regions"));
     S.regions.filter(function (r) { return r.owner === me(); }).sort(function (a, b) { return b.infection - a.infection; }).forEach(function (r) {
       const row = el("div", "row", '<div class="l1"><b>' + esc(r.name) + (r.country_id !== me() ? " · " + esc(cname(r.country_id)) : "") + "</b><span>" + fmt(r.population) + '</span></div><div class="bar2"><i style="width:' + Math.min(100, r.infection * 100) + '%"></i></div>' +
@@ -766,50 +855,82 @@
     });
   }
 
-  // ======================= upgrades =======================
-  let selTrack = "medicine", selTier = 0;
+  // ======================= upgrades: the tree =======================
+  const TAB_COLOR = { economy: "#d9a93a", military: "#d4343e", medicine: "#3fb37f", research: "#4cc3d9", border: "#3d7fe0" };
+  const TAB_ICON = {
+    economy: '<circle cx="12" cy="12" r="8"/><path d="M12 7v10M14.5 9.5c0-1-1.2-1.7-2.5-1.7s-2.5.7-2.5 1.7 1.2 1.7 2.5 1.7 2.5.7 2.5 1.7-1.2 1.7-2.5 1.7-2.5-.7-2.5-1.7"/>',
+    military: '<path d="M12 3l7 3v6c0 5-3 8-7 9-4-1-7-4-7-9V6z"/><path d="M12 8v5"/>',
+    medicine: '<path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="9"/>',
+    research: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3"/><path d="M8 15h8"/>',
+    border: '<path d="M3 20V8M9 20V8M15 20V8M21 20V8M3 11h18M3 16h18"/>'
+  };
+  const ROMAN = ["I", "II", "III", "IV", "V"];
+  let uTab = "medicine", uSel = null;
+  function nodeState(n) {
+    const P = S.player.nodes;
+    if (P.indexOf(n.id) >= 0) return "built";
+    if (n.excl && S.tree.nodes.some(function (o) { return o.excl === n.excl && o.id !== n.id && P.indexOf(o.id) >= 0; })) return "blocked";
+    return n.req.every(function (r) { return P.indexOf(r) >= 0; }) ? "avail" : "locked";
+  }
   function renderUpgrades() {
-    if (!S) return;
-    const box = $("tracks"); box.innerHTML = "";
-    Object.keys(S.tracks).forEach(function (k) {
-      const t = S.tracks[k], lvl = S.player.tech[k];
-      const tr = el("div", "track", '<h3>' + esc(t.name) + "<em>level " + lvl + " / 5</em></h3><p>" + esc(t.text) + "</p>");
-      const nodes = el("div", "nodes");
-      t.tiers.forEach(function (ti, i) {
-        if (i) nodes.appendChild(el("div", "link" + (i < lvl + 0 ? " built" : "")));
-        const n = el("button", "node" + (i < lvl ? " built" : i === lvl ? " next" : "") + (selTrack === k && selTier === i ? " sel" : ""), String(i + 1));
-        n.title = ti.name; n.addEventListener("click", function () { selTrack = k; selTier = i; renderUpgrades(); }); nodes.appendChild(n);
-      });
-      tr.appendChild(nodes); box.appendChild(tr);
+    if (!S || !S.tree) return;
+    $("u-budget").textContent = "$ " + fmt(S.player.budget);
+    const T = S.tree, tabs = $("ttabs"); tabs.innerHTML = "";
+    Object.keys(T.tabs).forEach(function (k) {
+      const all = T.nodes.filter(function (n) { return n.tab === k; }), done = all.filter(function (n) { return S.player.nodes.indexOf(n.id) >= 0; }).length;
+      const b = el("button", uTab === k ? "on" : "", '<svg viewBox="0 0 24 24">' + TAB_ICON[k] + "</svg>" + esc(T.tabs[k].name) + " <em>" + done + "/" + all.length + "</em>");
+      b.style.setProperty("--acc", TAB_COLOR[k]);
+      b.addEventListener("click", function () { uTab = k; uSel = null; renderUpgrades(); });
+      tabs.appendChild(b);
     });
-    const t = S.tracks[selTrack], ti = t.tiers[selTier], lvl = S.player.tech[selTrack];
-    const d = $("detail"); d.innerHTML = "";
-    d.appendChild(el("div", "meta", esc(t.name) + " · tier " + (selTier + 1)));
-    d.appendChild(el("h3", null, esc(ti.name)));
-    d.appendChild(el("p", null, esc(ti.text)));
-    const isNext = selTier === lvl, built = selTier < lvl, afford = S.player.budget >= ti.cost;
-    const b = el("button", "btn gold", built ? "Built" : "Build · $" + ti.cost);
-    b.disabled = built || !isNext || !afford || S.game_over;
-    b.addEventListener("click", function () { post({ action: "upgrade", track: selTrack }); });
-    d.appendChild(b);
-    d.appendChild(el("div", "hint", built ? "" : !isNext ? "Build the earlier tiers first." : !afford ? "You need $" + fmt(ti.cost - S.player.budget) + " more." : ""));
-    if (selTrack === "medicine") {
-      const m = S.player.medicine;
-      d.appendChild(el("h4", null, "Medicine stock"));
-      d.appendChild(el("div", "kv", "Doses in stock<b>" + fmt(m.stock) + "</b>"));
-      d.appendChild(el("div", "kv", "Production<b>" + m.production + " / day</b>"));
-      d.appendChild(el("div", "kv", "People harder to infect<b>" + pct(m.resistance, 0) + "%</b>"));
-      d.appendChild(el("div", "kv", "Doses sold abroad<b>" + fmt(m.exported) + "</b>"));
-      if (lvl >= 3) {
+    const nodes = T.nodes.filter(function (n) { return n.tab === uTab; }), by = {};
+    nodes.forEach(function (n) { by[n.id] = n; });
+    if (!uSel || !by[uSel]) uSel = (nodes.filter(function (n) { return nodeState(n) === "avail"; })[0] || nodes[0]).id;
+    $("graph").style.setProperty("--acc", TAB_COLOR[uTab]);
+    let lines = "";
+    nodes.forEach(function (n) { n.req.forEach(function (r) { const a = by[r]; if (a) lines += '<line class="' + (S.player.nodes.indexOf(n.id) >= 0 ? "built" : "") + '" x1="' + a.x + '" y1="' + a.y + '" x2="' + n.x + '" y2="' + n.y + '"/>'; }); });
+    $("tlines").innerHTML = lines;
+    const box = $("tnodes"); box.innerHTML = "";
+    nodes.forEach(function (n) {
+      const st = nodeState(n);
+      const b = el("button", "tn " + n.kind + " " + st + (uSel === n.id ? " sel" : ""), n.kind === "trunk" ? ROMAN[n.tier - 1] : '<svg viewBox="0 0 24 24">' + TAB_ICON[n.tab] + "</svg>");
+      b.style.left = n.x + "%"; b.style.top = n.y + "%"; b.title = n.name;
+      b.addEventListener("click", function () { uSel = n.id; renderUpgrades(); });
+      box.appendChild(b);
+      const lab = el("div", "tn-label", esc(n.name)); lab.style.left = n.x + "%"; lab.style.top = "calc(" + n.y + "% + " + (n.kind === "trunk" ? 34 : 28) + "px)"; box.appendChild(lab);
+    });
+    // details
+    const n = by[uSel], st = nodeState(n), d = $("tdetail"); d.innerHTML = "";
+    const left = el("div"), right = el("div", "buy-col");
+    left.appendChild(el("div", "meta", esc(T.tabs[n.tab].name) + " · " + (n.kind === "trunk" ? "tier " + n.tier : n.excl ? "doctrine, you can take only one" : "branch")));
+    left.appendChild(el("h3", null, esc(n.name)));
+    left.appendChild(el("p", null, esc(n.text)));
+    if (n.req.length) left.appendChild(el("div", "hint", "Needs: " + n.req.map(function (r) { return T.nodes.filter(function (x) { return x.id === r; })[0].name; }).join(", ")));
+    const afford = S.player.budget >= n.cost;
+    const b = el("button", "btn gold", st === "built" ? "Built" : "Develop · $" + n.cost);
+    b.disabled = st !== "avail" || !afford || S.game_over;
+    b.addEventListener("click", function () { post({ action: "upgrade", node: n.id }); });
+    right.appendChild(b);
+    right.appendChild(el("div", "hint", st === "locked" ? "Build the earlier nodes first." : st === "blocked" ? "You chose the other doctrine." : st === "avail" && !afford ? "You need $" + fmt(n.cost - S.player.budget) + " more." : ""));
+    if (st === "built" && n.kind === "branch") {
+      const sb = el("button", "btn", "Sell · refund $" + Math.floor(n.cost / 2));
+      sb.addEventListener("click", function () { post({ action: "sell_node", node: n.id }); }); right.appendChild(sb);
+    }
+    d.appendChild(left); d.appendChild(right);
+    if (uTab === "medicine") {
+      const m = S.player.medicine, w = el("div", "wide");
+      w.appendChild(el("div", "kv", "Doses in stock<b>" + fmt(m.stock) + " · " + m.production + " a day</b>"));
+      w.appendChild(el("div", "kv", "Your people are harder to infect by<b>" + pct(m.resistance, 0) + "%</b>"));
+      if (S.player.tech.medicine >= 3) {
         const seg = el("div", "seg");
         [["keep", "Keep"], ["balanced", "Balanced"], ["sell", "Sell"]].forEach(function (o) {
           const x = el("button", m.policy === o[0] ? "on" : "", o[1]); x.addEventListener("click", function () { post({ action: "medicine_policy", policy: o[0] }); }); seg.appendChild(x);
         });
-        d.appendChild(seg);
-        d.appendChild(el("div", "hint", { keep: "Everything stays home. A big stockpile protects your people a little more.", balanced: "Keep a reserve of 200 doses, sell the rest.", sell: "Keep 40 doses, sell everything else. Fastest money, and it helps the world cure." }[m.policy]));
-      } else d.appendChild(el("div", "hint", "Reach tier 3 to produce doses."));
+        w.appendChild(seg);
+        w.appendChild(el("div", "hint", { keep: "Everything stays home. A big stockpile protects your people a little more.", balanced: "Keep a reserve of 200 doses, sell the rest.", sell: "Keep 40 doses, sell everything else. Fastest money, and it helps the world cure." }[m.policy]));
+      } else w.appendChild(el("div", "hint", "Build Pharma factories (tier III) to produce doses."));
+      d.appendChild(w);
     }
-    if (selTrack === "border") d.appendChild(el("div", "hint", "Screening applies even with your borders open, so you can keep trading."));
   }
 
   // ======================= news banner =======================
@@ -842,7 +963,7 @@
       if (e.imp) { flash(); if (/attack|war|riot|uprising|seize|invade|collapse|fallen|dead/i.test(e.text)) shake(); }
     });
     if (unread && !$("drawer").classList.contains("open")) { const d = $("news-dot"); d.textContent = Math.min(unread, 99); d.classList.remove("hidden"); }
-    renderHud(); renderMap();
+    renderHud(); renderMap(); renderCamps();
     if ($("drawer").classList.contains("open")) { if (tab === "news") renderNews(); if (tab === "country") renderCountry(); if (tab === "dis") renderDisease(); }
     if ($("upg-ov").classList.contains("open")) renderUpgrades();
     if (prev !== null && s.turn !== prev) animateTraffic(s.traffic);
@@ -877,7 +998,7 @@
   }
   function clearAll() {
     gen++;
-    [cells, dots, icons].forEach(function (o) { Object.keys(o).forEach(function (k) { map.removeLayer(o[k]); delete o[k]; }); });
+    [cells, dots, icons, campMk].forEach(function (o) { Object.keys(o).forEach(function (k) { map.removeLayer(o[k]); delete o[k]; }); });
     [failed, styleKey, R].forEach(function (o) { Object.keys(o).forEach(function (k) { delete o[k]; }); });
     map.closePopup();
   }
@@ -899,7 +1020,7 @@
     $("end").classList.add(S.result);
     $("end-title").textContent = S.result === "victory" ? "VICTORY" : "DEFEAT";
     $("end-text").textContent = S.result_text;
-    $("end-grid").innerHTML = [["Days", S.day], ["Date", fmtDate(S.date)], ["Regions", st.regions], ["Population", fmt(st.population)], ["Dead", fmt(st.dead)], ["Upgrades", Object.values(S.player.tech).reduce(function (a, b) { return a + b; }, 0)]]
+    $("end-grid").innerHTML = [["Days", S.day], ["Mode", S.difficulty_label], ["Regions", st.regions], ["Population", fmt(st.population)], ["Dead", fmt(st.dead)], ["Soldiers lost", fmt(S.player.army_dead)]]
       .map(function (x) { return "<div><b>" + esc(x[1]) + "</b>" + esc(x[0]) + "</div>"; }).join("");
     setTimeout(function () { $("end").classList.add("open"); }, 500);
   }
@@ -912,7 +1033,8 @@
     });
     if (!sel.value && sel.options.length) { sel.options[0].selected = true; selCountry = sel.options[0].value; }
   }
-  function buildMenu(list) {
+  let selDiff = "normal", saveMeta = null, diffInfo = {};
+  function buildMenu(list, st) {
     menuCountries = list.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
     selCountry = menuCountries.some(function (c) { return c.id === "RO"; }) ? "RO" : menuCountries[0].id;
     fillCountries();
@@ -923,19 +1045,40 @@
       const b = el("button", "dopt", "<b>" + d.name + "</b><span>" + d.text + "</span>"); b.setAttribute("aria-pressed", String(d.id === selDisease));
       b.addEventListener("click", function () { selDisease = d.id; box.querySelectorAll(".dopt").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); }); box.appendChild(b);
     });
+    diffInfo = (st && st.difficulties) || {}; saveMeta = st && st.save;
+    const dbox = $("diffs"); dbox.innerHTML = "";
+    ["casual", "normal", "hard", "super"].forEach(function (k) {
+      const b = el("button", "dif d-" + k, esc((diffInfo[k] || { label: k }).label)); b.setAttribute("aria-pressed", String(k === selDiff));
+      b.addEventListener("click", function () { selDiff = k; dbox.querySelectorAll(".dif").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); $("diff-text").textContent = (diffInfo[k] || {}).text || ""; });
+      dbox.appendChild(b);
+    });
+    $("diff-text").textContent = (diffInfo[selDiff] || {}).text || "";
+    const cb = $("btn-continue");
+    if (saveMeta) { cb.classList.remove("hidden"); cb.textContent = "Continue · " + saveMeta.country + " · " + fmtDate(saveMeta.date) + " · day " + saveMeta.day + " · " + saveMeta.difficulty; }
+    else cb.classList.add("hidden");
     $("btn-start").disabled = false;
-    $("menu-note").textContent = "The game starts today, " + fmtDate(new Date().toISOString().slice(0, 10).replace(/-/g, "-")) + ". One turn is one day.";
+    $("menu-note").textContent = "The game starts today, " + fmtDate(new Date().toISOString().slice(0, 10)) + ". One turn is one day.";
   }
   function showMenu() { $("hud").classList.add("hidden"); $("menu").classList.remove("hidden"); $("btn-start").disabled = false; $("btn-start").textContent = "START"; $("menu-err").textContent = ""; }
   $("btn-start").addEventListener("click", async function () {
     const b = this; b.disabled = true; b.textContent = "STARTING…"; $("menu-err").textContent = ""; sndStart();
     try {
-      const res = await api("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ country: selCountry, disease: selDisease }) });
+      const res = await api("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ country: selCountry, disease: selDisease, difficulty: selDiff }) });
       if (!res.ok) throw new Error(res.data.error || "Could not start.");
       await enter(res.data);
     } catch (e) { $("menu-err").textContent = e.message; b.disabled = false; b.textContent = "START"; }
   });
-  $("btn-again").addEventListener("click", function () { $("end").classList.remove("open"); clearAll(); S = null; showMenu(); });
+  $("btn-again").addEventListener("click", function () { $("end").classList.remove("open"); clearAll(); S = null; saveMeta = null; $("btn-continue").classList.add("hidden"); showMenu(); });
+  $("btn-continue").addEventListener("click", async function () {
+    const b = this; b.disabled = true; $("menu-err").textContent = ""; sndStart();
+    try {
+      const res = await api("/api/continue", { method: "POST" });
+      if (!res.ok) throw new Error(res.data.error || "Could not load the save.");
+      await enter(res.data);
+    } catch (e) { $("menu-err").textContent = e.message; }
+    b.disabled = false;
+  });
+  $("st-dis").addEventListener("click", function () { openDrawer("dis"); });
 
   // ======================= wiring =======================
   $("btn-close").addEventListener("click", function () { post({ action: "close_borders" }); });
@@ -1132,7 +1275,7 @@
   function renderDisease() {
     const pane = $("pane-dis"); if (!S) return;
     const kv = function (k, v) { return '<div class="kv">' + k + "<b>" + v + "</b></div>"; };
-    pane.innerHTML = kv("Pathogen", esc(S.disease_name) + " (" + esc(S.disease) + ")") + kv("Phase", S.phase + " of 4 · " + esc(S.phase_name)) +
+    pane.innerHTML = kv("Pathogen", esc(S.disease_name) + " (" + esc(S.disease) + ")") + kv("Difficulty", esc(S.difficulty_label)) + kv("Phase", S.phase + " of 4 · " + esc(S.phase_name)) +
       '<div class="hint" style="margin:4px 0 8px">' + esc(PHASE_TEXT[S.phase]) + "</div>" +
       kv("Countries infected", S.infected_countries) + kv("World infected", pct(S.world_infected, 1) + "%") + kv("Dead worldwide", fmt(S.world_dead)) + kv("Nations fallen", S.fallen) +
       kv("Cure", S.cure_started ? pct(S.cure_progress, 1) + "%" : "not started");
@@ -1148,7 +1291,7 @@
   worldReady = loadWorld();
   api("/api/state", { cache: "no-store" }).then(function (res) {
     const s = res.data;
-    if (s.started) { buildMenu(s.countries); enter(s); } else buildMenu(s.countries);
+    if (s.started) { buildMenu(s.countries, s); enter(s); } else buildMenu(s.countries, s);
   }).catch(function () { $("menu-err").textContent = "Cannot reach the server. Is app.py running?"; });
 })();
 </script>

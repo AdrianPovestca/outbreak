@@ -21,7 +21,9 @@ MOD_LABELS = {
     "pharma_lease": ("Exclusive licence", "Medicine output -30%"),
     "volunteers": ("Volunteers", "Deaths -10% in your regions"),
     "screening": ("Airport screening", "Infected arrivals -30%"),
+    "transition": ("New minister", "Income -5% while the new team settles in"),
 }
+ROLE_TITLES = {"health": "Minister of Health", "general": "Chief of Staff", "economist": "Finance Minister"}
 
 
 # ------------------------------------------------------------------ helpers
@@ -600,7 +602,210 @@ def _press_silence(sim, ctx):
 
 
 
+# ------------------------------------------------------------------ war: decisions during a campaign
+def _camp(sim, ctx):
+    return next((c for c in sim.campaigns if c["id"] == ctx["cid"]), None)
+
+
+def _dig_press(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["front"] += 6
+        c["loss_mult"], c["loss_until"] = 1.5, sim.turn + 4
+    return "The assault goes in at dawn. The front moves, and so do the casualty lists."
+
+
+def _dig_siege(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["front"] += 2
+        c["bonus"] += 0.02
+    return "You settle in for a siege. It will be slower, and cheaper in lives."
+
+
+def _dig_reinforce(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["front"] += 12
+    return "Fresh brigades reach the front."
+
+
+def _civ_bombard(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["front"] += 18
+    sim._rep(-15)
+    sim._change_rel_all(-6)
+    sim.stability = max(0.0, sim.stability - 0.02)
+    return "The artillery goes on for three nights. The front collapses. The world is watching."
+
+
+def _civ_spare(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["front"] -= 3
+    sim._rep(8)
+    sim.stability = min(1.0, sim.stability + 0.01)
+    return "You keep the guns silent. The soldiers are bitter, the world is not."
+
+
+def _civ_corridor(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["bonus"] += 0.02
+    sim._rep(12)
+    return "A corridor opens for civilians. Many of the defenders slip out with them."
+
+
+def _terms_accept(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        sim.campaigns.remove(c)
+    sim.war.discard(ctx["tid"])
+    sim.war_since.pop(ctx["tid"], None)
+    sim.truce[ctx["tid"]] = sim.turn + 40
+    sim.rel[ctx["tid"]] = -40.0
+    sim.budget += 200
+    return "%s pays $200 and the guns stop. You do not get the region." % ctx["country"]
+
+
+def _terms_fight(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["bonus"] += 0.02
+    return "You send the envoy home. The army hears about it."
+
+
+def _terms_demand(sim, ctx):
+    c = _camp(sim, ctx)
+    if c and sim.rng.random() < 0.5:
+        c["front"] += 25
+        return "The defenders crumble when the terms are read out."
+    if c:
+        c["bonus"] -= 0.05
+    return "Your demands are thrown back. They fight harder."
+
+
+def _tired_rotate(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["bonus"] += 0.03
+    return "Fresh troops rotate in. The old ones sleep for the first time in a week."
+
+
+def _tired_push(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        c["front"] += 6
+        c["dead"] += 800
+    sim.army_dead += 800
+    sim.stability = max(0.0, sim.stability - 0.02)
+    return "You order the advance. 800 more names for the memorial."
+
+
+def _tired_withdraw(sim, ctx):
+    c = _camp(sim, ctx)
+    if c:
+        sim.campaigns.remove(c)
+    sim.stability = max(0.0, sim.stability - 0.01)
+    return "The army pulls back. The war with %s goes on." % ctx["country"]
+
+
+def _occ_martial(sim, ctx):
+    r = sim.regions[ctx["rid"]]
+    r["rule"], r["unrest"] = "martial", 0.1
+    sim._rep(-4)
+    return "Soldiers on every corner. The region is quiet, and it hates you."
+
+
+def _occ_autonomy(sim, ctx):
+    r = sim.regions[ctx["rid"]]
+    r["rule"], r["unrest"] = "autonomy", 0.0
+    sim._change_rel(ctx["tid"], 10)
+    return "Local councils keep their seats. Resentment grows slowly."
+
+
+def _occ_exploit(sim, ctx):
+    r = sim.regions[ctx["rid"]]
+    r["rule"], r["unrest"] = "exploit", 0.4
+    sim.budget += 180
+    sim._rep(-6)
+    return "Factories and banks are emptied for $180. The next riot is already being planned."
+
+
+BATTLE = {
+    "dig": dict(id="dig", title="{region}: they dig in", mood="fire", cd=0, weight=1, cond=None,
+                text="Day {days}. Your scouts report trenches across every road into {region}. The front is at {front}% and {dead} of your soldiers are dead. Your general wants an answer by nightfall.",
+                choices=[dict(label="Press the assault", hint="Front +6%. Losses +50% for 4 days.", fn=_dig_press),
+                         dict(label="Lay siege", hint="Front +2%. Slow, steadier.", fn=_dig_siege),
+                         dict(label="Call up reinforcements", hint="Front +12%.", cost=80, fn=_dig_reinforce)]),
+    "civ": dict(id="civ", title="Civilians in {region}", mood="skull", cd=0, weight=1, cond=None,
+                text="Thousands of civilians are trapped between the lines. Your staff say that shelling the city would end the battle in days. The cameras say the same thing, in a different tone.",
+                choices=[dict(label="Bombard the city", hint="Front +18%. Standing abroad -15, relations -6 with everyone.", fn=_civ_bombard),
+                         dict(label="Spare the city", hint="Front -3%. Standing +8.", fn=_civ_spare),
+                         dict(label="Open a corridor", hint="Standing +12. The defenders are weaker.", cost=50, fn=_civ_corridor)]),
+    "terms": dict(id="terms", title="An envoy from {country}", mood="crown", cd=0, weight=1, cond=None,
+                  text="You are winning, and they know it. A man in a creased suit walks across the lines with a white flag and a briefcase.",
+                  choices=[dict(label="Accept their terms", hint="The war ends. They pay $200. You do not get the region.", fn=_terms_accept),
+                           dict(label="Fight on", hint="The army hears you refused.", fn=_terms_fight),
+                           dict(label="Demand total surrender", hint="50%: front +25%. 50%: they fight harder.", fn=_terms_demand)]),
+    "tired": dict(id="tired", title="The army is breaking", mood="skull", cd=0, weight=1, cond=None,
+                  text="Day {days}. Your officers say the men are exhausted. {dead} are dead. Some units have stopped answering the radio.",
+                  choices=[dict(label="Rotate the troops", hint="Campaign strength +3%.", cost=60, fn=_tired_rotate),
+                           dict(label="Order the advance", hint="Front +6%. 800 more dead. Stability -2%.", fn=_tired_push),
+                           dict(label="Withdraw", hint="The campaign ends. Stability -1%.", fn=_tired_withdraw)]),
+    "occ": dict(id="occ", title="Who will rule {region}?", mood="crown", cd=0, weight=1, cond=None,
+                text="The shooting has stopped. Now you have a region full of people who did not choose you, and a town hall with no mayor.",
+                choices=[dict(label="Martial law", hint="Unrest grows half as fast. Standing -4.", fn=_occ_martial),
+                         dict(label="Local autonomy", hint="Unrest starts at zero. Relations +10 with {country}.", fn=_occ_autonomy),
+                         dict(label="Strip the assets", hint="+$180 now. Unrest grows 50% faster. Standing -6.", fn=_occ_exploit)]),
+}
+
+
+def battle(sim, key, c):
+    r = sim.regions[c["rid"]]
+    ctx = {"cid": c["id"], "rid": c["rid"], "tid": c["target"], "region": r["name"], "country": sim._cname(c["target"]),
+           "days": c["day"], "front": max(0, int(c["front"])), "dead": format(c["dead"], ",")}
+    return build(sim, BATTLE[key], ctx)
+
+
+# ------------------------------------------------------------------ the cabinet speaks
+def _adv_cond(sim):
+    low = [(r, a) for r, a in sim.advisors.items() if a["loyalty"] < 25]
+    if not low:
+        return None
+    role, a = min(low, key=lambda x: x[1]["loyalty"])
+    return {"role": role, "title": ROLE_TITLES[role], "who": a["name"]}
+
+
+def _adv_pay(sim, ctx):
+    sim._adv(ctx["role"], 20)
+    return "%s stays, for now. It was not cheap." % ctx["who"]
+
+
+def _adv_listen(sim, ctx):
+    sim._adv(ctx["role"], 10)
+    _stab(sim, -0.01)
+    return "You hear %s out for three hours. Nothing changes except the mood." % ctx["who"]
+
+
+def _adv_replace(sim, ctx):
+    import random as _r
+    first = ["Elena", "Marcus", "Ioana", "Tariq", "Sofia", "Daniel", "Amara", "Viktor", "Nadia", "Lucas"]
+    last = ["Voss", "Marin", "Okafor", "Lindqvist", "Haddad", "Petrov", "Rossi", "Tanaka", "Dumitru", "Silva"]
+    a = sim.advisors[ctx["role"]]
+    a["name"], a["loyalty"] = "%s %s" % (sim.rng.choice(first), sim.rng.choice(last)), 45.0
+    sim.mods["transition"] = sim.turn + 20
+    return "%s is out. %s takes the post. The ministry needs a few weeks to settle." % (ctx["who"], a["name"])
+
+
+
 EVENTS = [
+    dict(id="advisor", title="{who} is losing patience", mood="crown", cd=60, weight=3.0, cond=_adv_cond,
+         text="Your {title} has stopped returning your calls. People in the corridor say {who} is packing a bag, or writing a statement, or both.",
+         choices=[dict(label="Raise their pay", hint="Loyalty +20.", cost=100, fn=_adv_pay),
+                  dict(label="Hear them out", hint="Loyalty +10. Stability -1%.", fn=_adv_listen),
+                  dict(label="Replace them", hint="A new face at 45 loyalty. Income -5% for 20 days.", fn=_adv_replace)]),
     dict(id="alarm", title="The first alarm", mood="shield", cd=200, weight=1.8, cond=_alarm_cond,
          text="Your health minister puts three reports on the table. Every one of them says the same thing, in different words: it is already out, and it travels by plane.",
          choices=[dict(label="Ground all flights", hint="Air borders closed. Stability -2%.", fn=_alarm_ground),
@@ -718,6 +923,26 @@ EVENTS = [
 BY_ID = {e["id"]: e for e in EVENTS}
 
 
+# how each choice moves the cabinet: event id -> choice index -> {role: change}
+ADV = {
+    "panic": {0: {"general": 4}, 1: {"health": 3}, 2: {"general": -4, "health": -3}},
+    "food": {0: {"economist": -3}, 1: {"economist": 3}, 2: {"economist": 4, "health": -3}},
+    "hospitals": {0: {"health": 8}, 1: {"health": -8}, 2: {"health": 2}},
+    "coup": {0: {"general": -12}, 1: {"general": 6}, 2: {"general": 10, "economist": -3}},
+    "blackmarket": {0: {"economist": -2, "health": 3}, 1: {"economist": 5}, 2: {"economist": -4, "health": -4}},
+    "refugees": {0: {"health": -4}, 1: {"health": 3}, 2: {"health": 2}},
+    "shortcut": {0: {"health": -4}, 1: {"general": 3}, 2: {"health": 3}},
+    "deserters": {0: {"general": -4}, 1: {"general": 5}, 2: {"general": 3}},
+    "pharma": {0: {"economist": 6, "health": -4}, 1: {"health": 4}, 2: {"health": 6, "economist": -3}},
+    "peace": {0: {"general": -3}, 1: {"general": 3}, 2: {"general": 4}},
+    "rebels": {0: {"general": 4}, 1: {"general": -2}, 2: {"general": -5}},
+    "protest": {0: {"economist": 5}, 1: {"general": 3, "economist": -3}, 2: {"economist": 2}},
+    "buying": {0: {"economist": 3}, 1: {"economist": 1}, 2: {"economist": -4}},
+    "donor": {0: {"economist": 3}, 1: {"economist": 4}, 2: {"economist": -3}},
+    "alarm": {0: {"health": 5, "economist": -4}, 1: {"health": 4}, 2: {"health": -4}},
+}
+
+
 # ------------------------------------------------------------------ engine
 def eligible(sim):
     """[(weight, event, ctx)] for events that can fire right now."""
@@ -764,5 +989,7 @@ def resolve(sim, pending, index):
         return False, "You need $%d for that." % cost
     sim.budget -= cost
     msg = ch["fn"](sim, pending["_ctx"])
+    for role, d in ADV.get(pending["_ev"]["id"], {}).get(index, {}).items():
+        sim._adv(role, d)
     sim.event_cd[pending["_ev"]["id"]] = sim.turn + pending["_ev"]["cd"]
     return True, msg

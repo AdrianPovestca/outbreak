@@ -16,10 +16,11 @@ import datetime
 import json
 import math
 import os
+import pickle
 import random
 import urllib.request
 
-from . import events
+from . import events, tree
 from .seagrid import ensure_sea_grid
 
 GEOJSON_URL = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"
@@ -260,6 +261,26 @@ def list_countries(data_dir=None):
 
 # ============================== TUNING (1 turn = 1 day) ==============================
 START_BUDGET = 150
+SAVE_VERSION = 5
+DIFFICULTY = {
+    # spread/lethal: how hard the pathogen is; cure: global cure speed; income: yours; aggr: AI wars; budget: start money
+    "casual": dict(label="Casual", spread=0.75, lethal=0.70, cure=1.35, income=1.30, aggr=0.5, budget=300, mut=1.4, ai_start=0, peace=1.2, near=False,
+                   text="A gentle pandemic. Slower disease, more money, calmer neighbours."),
+    "normal": dict(label="Normal", spread=1.00, lethal=1.00, cure=1.00, income=1.00, aggr=1.0, budget=150, mut=1.0, ai_start=0, peace=1.0, near=False,
+                   text="The game as designed."),
+    "hard": dict(label="Hard", spread=1.20, lethal=1.25, cure=0.85, income=0.85, aggr=1.4, budget=120, mut=0.8, ai_start=1, peace=0.85, near=False,
+                 text="Faster, deadlier disease. Slower cure, poorer treasury, hungrier neighbours."),
+    "super": dict(label="Super hard", spread=1.45, lethal=1.60, cure=0.70, income=0.70, aggr=2.0, budget=80, mut=0.6, ai_start=2, peace=0.6, near=True,
+                  text="Patient zero starts close to home. Everything is faster, deadlier and angrier, and peace is hard to buy."),
+}
+FORCE = {
+    "light": dict(label="Raid", cost=0.6, proj=0.75, speed=0.8, loss=0.6, text="Small force. Cheaper and slower, fewer losses."),
+    "standard": dict(label="Campaign", cost=1.0, proj=1.0, speed=1.0, loss=1.0, text="A proper army."),
+    "allin": dict(label="Total war", cost=1.7, proj=1.4, speed=1.3, loss=1.8, text="Everything you have. Faster and stronger, many more dead."),
+}
+ROLES = {"health": "Minister of Health", "general": "Chief of Staff", "economist": "Finance Minister"}
+FIRST = ["Elena", "Marcus", "Ioana", "Tariq", "Sofia", "Daniel", "Amara", "Viktor", "Nadia", "Lucas", "Mira", "Omar", "Katarina", "Andrei", "Layla", "Henrik"]
+LAST = ["Voss", "Marin", "Okafor", "Lindqvist", "Haddad", "Petrov", "Rossi", "Tanaka", "Dumitru", "Silva", "Novak", "Reyes", "Hartmann", "Costa", "Ivanov", "Kovacs"]
 INCOME_SCALE = 0.25          # $ per day = INCOME_SCALE * (3 + sum of region values)
 LOCAL_R = 0.09               # logistic growth per day inside a region
 SEED_INFECTION = 0.003       # a fresh outbreak starts with 0.3% of the region infected
@@ -369,8 +390,11 @@ def _clamp(x, lo, hi):
 
 # ============================== SIMULATION ==============================
 class Simulation:
-    def __init__(self, player_country="RO", disease="random", data_dir=None, seed=None, start_date=None):
+    def __init__(self, player_country="RO", disease="random", data_dir=None, seed=None, start_date=None, difficulty="normal"):
         self.rng = random.Random(seed)
+        self.version = SAVE_VERSION
+        self.difficulty = difficulty if difficulty in DIFFICULTY else "normal"
+        self.diff = DIFFICULTY[self.difficulty]
         self.data_dir = data_dir or DEFAULT_DATA_DIR
         countries, world = ensure_world(self.data_dir)
         self.sea = ensure_sea_grid(self.data_dir)
@@ -410,7 +434,10 @@ class Simulation:
 
         # ---- player state
         self.turn = 0
-        self.budget = float(START_BUDGET)
+        self.budget = float(self.diff["budget"])
+        self.perks = set()
+        self.campaigns, self._camp_id, self.army_dead, self.reputation = [], 0, 0, 0.0
+        self.advisors = {r: {"name": "%s %s" % (self.rng.choice(FIRST), self.rng.choice(LAST)), "loyalty": 55.0} for r in ROLES}
         self.income = 0.0
         self.income_detail = {}
         self.tech = {t: 0 for t in TRACKS}
@@ -436,6 +463,9 @@ class Simulation:
                        "scientist": 1.0 + (1.0 if c["stability"] > 0.7 else 0),
                        "trader": 1.0 + (0.8 if c["population"] > 20e6 else 0)}
             c["personality"] = self.rng.choices(list(weights), weights=list(weights.values()))[0]
+            for _ in range(self.diff["ai_start"]):          # harder games: the world starts stronger
+                tr = self.rng.choice(list(TRACKS))
+                c["tech"][tr] = min(5, c["tech"][tr] + 1)
 
         # ---- world state
         self.cure_started = False
@@ -451,7 +481,7 @@ class Simulation:
         self.mods, self.event_cd = {}, {}
         self.mm = {"grow": 1.0, "leth": 1.0, "air": 1.0, "sea": 1.0, "land": 1.0, "dom": 1.0, "res": 1.0, "border": 1.0, "leak": 0.0}
         self.mutations, self.phase = [], 1
-        self.next_mutation = self.rng.randint(70, 100)
+        self.next_mutation = int(self.rng.randint(70, 100) * self.diff["mut"])
         self.next_event = self.rng.randint(12, 20)
         self._pending, self._queue, self._uid, self._cards_done = None, [], 0, set()
         self._refresh_cache()
@@ -482,6 +512,25 @@ class Simulation:
 
     def _my_regions(self):
         return [r for r in self.regions.values() if r["owner"] == self.player]
+
+    def perk(self, pid):
+        return pid in self.perks
+
+    def has_node(self, nid):
+        n = tree.BY_ID[nid]
+        return self.tech[n["tab"]] >= n["tier"] if n["kind"] == "trunk" else nid in self.perks
+
+    def _adv(self, role, d):
+        a = self.advisors.get(role)
+        if a:
+            a["loyalty"] = _clamp(a["loyalty"] + d, 0.0, 100.0)
+
+    def _advm(self, role):
+        loy = self.advisors[role]["loyalty"] / 100.0
+        return 0.9 + 0.2 * loy if role == "economist" else 0.85 + 0.3 * loy
+
+    def _rep(self, d):
+        self.reputation = _clamp(self.reputation + d, -100.0, 100.0)
 
     def _tech_of(self, owner):
         return self.tech if owner == self.player else self.countries[owner]["tech"]
@@ -522,7 +571,9 @@ class Simulation:
                     bonus = 0.10
                 elif self.med_policy == "balanced" and self.med_stock >= 60:
                     bonus = 0.06
-            return min(0.85, (RES[self.tech["medicine"]] + bonus) * self.mm["res"])
+            bonus += 0.08 * self.perk("med_drive") + 0.06 * self.perk("res_nat")
+            mres = 1 - (1 - self.mm["res"]) * (0.7 if self.perk("res_gen") else 1.0)
+            return min(0.85, (RES[self.tech["medicine"]] + bonus) * mres * self._advm("health"))
         c = self.countries[owner]
         return min(0.85, (RES[c["tech"]["medicine"]] + (0.15 if self.turn < c["aid_until"] else 0.0)) * self.mm["res"])
 
@@ -533,14 +584,21 @@ class Simulation:
     def _emits(self, r):
         """A locked-down region still leaks now and then; a lethal cordon leaks far less."""
         k = min(1.0, self.turn / 600)                 # the pathogen adapts and slips through more and more
+        cut = 0.10 if (r["owner"] == self.player and self.perk("med_quar")) else 0.0
         if r["cordon"]:
-            return self.rng.random() < 0.05 + 0.15 * k + self.mm["leak"] * 0.5
+            return self.rng.random() < max(0.02, 0.05 + 0.15 * k + self.mm["leak"] * 0.5 - cut / 2)
         if r["lockdown"]:
-            return self.rng.random() < 0.15 + 0.45 * k + self.mm["leak"]
+            return self.rng.random() < max(0.04, 0.15 + 0.45 * k + self.mm["leak"] - cut)
         return True
 
     def _spawn_patient_zero(self):
         options = [c for c in self.countries if c != self.player and self.by_country.get(c)]
+        if self.diff["near"]:
+            ring = set(self.countries[self.player]["borders"])
+            for n in list(ring):
+                ring |= set(self.countries[n]["borders"])
+            close = [c for c in options if c in ring]
+            options = close or options
         cid = self.rng.choice(options)
         r = self.regions[self.rng.choice(self.by_country[cid])]
         r["infection"] = PATIENT_ZERO_START
@@ -559,29 +617,33 @@ class Simulation:
         else:
             c = self.countries[owner]
             st, tier = c["stability"] * (1 - 0.5 * self._cinf.get(owner, 0.0)), c["tech"]["military"]
-        return 10 * math.sqrt(max(pop_m, 0.01)) * (0.6 + 0.8 * st) * MIL_POWER[tier] * (self._mod("army_weak", 0.8) if owner == self.player else 1.0)
+        return 10 * math.sqrt(max(pop_m, 0.01)) * (0.6 + 0.8 * st) * MIL_POWER[tier] * ((self._mod("army_weak", 0.8) * self._advm("general")) if owner == self.player else 1.0)
 
-    def invade_info(self, r):
+    def invade_info(self, r, force="standard"):
         defender = r["owner"]
-        cost = int((30 + 5 * math.sqrt(r["population"] / 1e6)) * (1 + 0.10 * self.conquests))
+        F = FORCE[force]
+        cost = int((30 + 5 * math.sqrt(r["population"] / 1e6)) * (1 + 0.10 * self.conquests) * F["cost"])
         share = r["population"] / max(1.0, self._owned_pop.get(defender, 1.0))
         adj = any(n in self.countries[defender]["borders"] for n in self._my_cids) if defender in self.countries else False
-        proj = 0.5 + 0.1 * self.tech["military"] + (0.2 if adj else 0.0)
+        proj = (0.5 + 0.1 * self.tech["military"] + (0.2 if adj else 0.0)) * F["proj"]
         ratio = self.power(self.player) * proj / max(1e-6, self.power(defender) * (0.35 + 0.65 * share))
-        return cost, _clamp(ratio / (ratio + 1), 0.07, 0.90), adj
+        return cost, _clamp(ratio / (ratio + 1) + 0.08 * self.perk("mil_sf"), 0.07, 0.90), adj
 
     # ------------------------------------------------------------ economy
     def _economy(self, apply=True):
         mine = self._my_regions()
         base = 3 + sum(self._region_value(r) * (0.5 if r["lockdown"] else 1.0) for r in mine)
-        gross = INCOME_SCALE * base * ECON_MULT[self.tech["economy"]] * (0.6 + 0.8 * self.stability)
+        gross = INCOME_SCALE * base * ECON_MULT[self.tech["economy"]] * (0.6 + 0.8 * self.stability) * self.diff["income"] * self._advm("economist")
+        gross *= (1.15 if self.perk("eco_auster") else 1.0) * (0.95 if self.perk("eco_stim") else 1.0)
         closed = self.closed_modes
-        gross *= 1 - 0.2 * ("air" in closed) - 0.15 * ("sea" in closed) - 0.15 * ("land" in closed)
-        gross *= self._mod("ration", 0.9) * self._mod("junta", 0.9)
+        pen = 0.2 * ("air" in closed) + 0.15 * ("sea" in closed) + 0.15 * ("land" in closed)
+        pen *= (0.6 if self.perk("med_mob") else 1.0) * (0.75 if self.perk("bor_cor") else 1.0)
+        gross *= 1 - pen
+        gross *= self._mod("ration", 0.9) * self._mod("junta", 0.9) * self._mod("transition", 0.95)
         trade = sum(0.35 * math.sqrt(self.countries[c]["population"] / 1e6) * INCOME_SCALE
-                    for c in self.trade if c not in self.war)
-        sanctions = min(0.30, 0.03 * len(self.war))
-        upkeep = INCOME_SCALE * (1.2 * sum(1 for r in mine if r["lockdown"]) + 2.0 * sum(1 for r in mine if r["cordon"])
+                    for c in self.trade if c not in self.war) * (1.5 if self.perk("eco_fleet") else 1.0) + (1.5 if self.perk("eco_haven") else 0.0)
+        sanctions = min(0.30, 0.03 * len(self.war)) * (0.5 if self.perk("eco_black") else 1.0)
+        upkeep = INCOME_SCALE * ((0.7 if self.perk("med_quar") else 1.0) * 1.2 * sum(1 for r in mine if r["lockdown"]) + 2.0 * sum(1 for r in mine if r["cordon"])
                                  + 1.4 * sum(1 for r in mine if r["country_id"] not in self.union and r["country_id"] != self.player))
         net = gross * (1 - sanctions) + trade + self.med_sales_today - upkeep
         self.income_detail = {"gross": round(gross, 1), "trade": round(trade, 1), "medicine": round(self.med_sales_today, 1),
@@ -596,7 +658,8 @@ class Simulation:
         locks = sum(1 for r in mine if r["lockdown"])
         cords = sum(1 for r in mine if r["cordon"])
         n_closed = len(self.closed_modes)
-        d = -STAB_CLOSED * n_closed / 3 if n_closed else STAB_RECOVER
+        d = -STAB_CLOSED * n_closed / 3 * (0.6 if self.perk("med_mob") else 1.0) if n_closed else STAB_RECOVER
+        d += -0.0004 * self.perk("eco_auster") + 0.0006 * self.perk("eco_stim")
         d -= 0.0004 * locks + 0.0015 * cords + 0.0004 * len(self.war) + 0.006 * self._cinf.get(self.player, 0.0)
         st = self.stability + d
         st = min(st, max(base, self.stability))
@@ -619,16 +682,20 @@ class Simulation:
                 continue
             owner = r["owner"]
             res = self._resistance(owner)
-            g = LOCAL_R * D["local"] * self.mm["grow"] * (1 - 0.6 * res)
+            g = LOCAL_R * D["local"] * self.mm["grow"] * self.diff["spread"] * (1 - 0.6 * res)
             if r["lockdown"]:
-                g *= LOCK_GROWTH
+                g *= 0.4 if (owner == self.player and self.perk("med_quar")) else LOCK_GROWTH
             if r["cordon"]:
                 g *= CORDON_GROWTH
             inf = min(1.0, inf + g * inf * (1 - inf) + (0.0005 if inf < 0.2 else 0.0))
             r["infection"] = inf
-            leth = D["lethality"] * sev * self.mm["leth"] * HOSP_LETH[self._tech_of(owner)["medicine"]]
+            lm = self.mm["leth"]
+            if owner == self.player and self.perk("res_gen"):
+                lm = 1 + (lm - 1) * 0.7
+            leth = D["lethality"] * sev * lm * self.diff["lethal"] * HOSP_LETH[self._tech_of(owner)["medicine"]]
             if owner == self.player:
                 leth *= self._mod("hosp_a", 0.7) * self._mod("hosp_b", 0.85) * self._mod("volunteers", 0.9)
+                leth *= (0.92 if self.perk("med_ships") else 1.0) * (1.1 - 0.2 * self.advisors["health"]["loyalty"] / 100.0)
             r["dead"] = min(1.0, r["dead"] + leth * inf * (1 - r["dead"]))
             if r["cordon"]:
                 r["dead"] = min(1.0, r["dead"] + 0.004 * (1 - r["dead"]))
@@ -639,10 +706,10 @@ class Simulation:
     def _occupation(self, r):
         if r["owner"] != self.player or r["country_id"] == self.player or r["country_id"] in self.union:
             return
-        r["unrest"] += 0.0035 * (1 - 0.12 * self.tech["military"]) * (1.6 - self.stability)
+        r["unrest"] += 0.0035 * (1 - 0.12 * self.tech["military"]) * (1.6 - self.stability) * (0.75 if self.perk("mil_garr") else 1.0) * {"martial": 0.5, "autonomy": 1.0, "exploit": 1.5}.get(r.get("rule"), 1.0)
         if r["unrest"] >= 1.0:
             home = r["country_id"]
-            r["owner"], r["unrest"], r["lockdown"], r["cordon"] = home, 0.0, False, False
+            r["owner"], r["unrest"], r["lockdown"], r["cordon"], r["rule"] = home, 0.0, False, False, None
             self.conquests = max(0, self.conquests - 1)
             self._news("UPRISING: %s throws off your occupation and returns to %s!" % (self._rname(r), self._cname(home)),
                        imp=True, kind="dip")
@@ -654,16 +721,26 @@ class Simulation:
             clean = [r for r in regs if r["infection"] < 0.001 and not r["purged"]]
             if not src or not clean:
                 continue
-            if self.rng.random() < min(0.9, DOMESTIC_BASE * self._adapt * self.mm["dom"] * len(src) * (0.5 + max(r["infection"] for r in src))):
+            if self.rng.random() < min(0.9, DOMESTIC_BASE * self._adapt * self.mm["dom"] * self.diff["spread"] * len(src) * (0.5 + max(r["infection"] for r in src))):
                 t = self.rng.choice(clean)
                 t["infection"] = SEED_INFECTION
 
     def _gets_through(self, tgt, mode):
         tech = self._tech_of(tgt["owner"])
         mult = (BORDER_LAND if mode == "land" else BORDER_AIRSEA)[tech["border"]]
-        mult = 1 - (1 - mult) * self.mm["border"]
+        mm_b = self.mm["border"]
+        if tgt["owner"] == self.player and self.perk("bor_bio"):
+            mm_b = 1 - (1 - mm_b) * 0.5
+        mult = 1 - (1 - mult) * mm_b
         if tgt["owner"] == self.player:
             mult *= self._mod("screening", 0.7)
+            mult *= 0.9 if self.perk("med_tests") else 1.0
+            if mode == "sea" and self.perk("bor_coast"):
+                mult *= 0.85
+            if mode == "air" and self.perk("bor_air"):
+                mult *= 0.85
+            if mode == "land" and self.perk("bor_wall"):
+                mult *= 0.8
         return self.rng.random() < mult * (1 - 0.7 * self._resistance(tgt["owner"]))
 
     def _traffic(self, kind, src, dst, blocked=False, path=None):
@@ -698,7 +775,7 @@ class Simulation:
             if not (c[need] and c[mode + "_open"]):
                 continue
             s = self._cinf.get(cid, 0.0)
-            if s < 0.003 or self.rng.random() >= base * self._adapt * self.D[mode] * self.mm[mode] * (0.15 + min(1.0, s * 1.5)):
+            if s < 0.003 or self.rng.random() >= base * self._adapt * self.diff["spread"] * self.D[mode] * self.mm[mode] * (0.15 + min(1.0, s * 1.5)):
                 continue
             sources = [r for r in (self.regions[i] for i in self.by_country.get(cid, []))
                        if r["infection"] >= 0.01 and self._emits(r) and not self._blocked(r, mode)]
@@ -749,7 +826,7 @@ class Simulation:
                        if r["infection"] >= 0.01 and self._emits(r) and not self._blocked(r, "land")]
             if not sources:
                 continue
-            p = LAND_BASE * self._adapt * self.D["land"] * self.mm["land"] * (0.1 + min(1.0, s * 1.5))
+            p = LAND_BASE * self._adapt * self.diff["spread"] * self.D["land"] * self.mm["land"] * (0.1 + min(1.0, s * 1.5))
             for nid in c["borders"]:
                 nb = self.countries.get(nid)
                 if not nb or not nb["land_open"] or self.rng.random() >= p:
@@ -774,6 +851,7 @@ class Simulation:
         if any(r["infection"] > 0.01 for r in self._my_regions()):
             self.med_stock = max(0.0, self.med_stock - (2 + 0.8 * tier))
         keep, price = {"keep": (MED_CAP, 0.0), "balanced": (200, 1.0), "sell": (40, 1.3)}[self.med_policy]
+        price *= 1.3 if self.perk("med_export") else 1.0
         if price and self.med_stock > keep:
             sold = self.med_stock - keep
             self.med_stock = keep
@@ -799,7 +877,7 @@ class Simulation:
             if cid in self.war:
                 self.rel[cid] = min(self.rel[cid], -55.0)
                 continue
-            target = self.rel_base[cid] + (30 if cid in self.trade else 0) + (35 if cid in self.allied else 0)
+            target = self.rel_base[cid] + (30 if cid in self.trade else 0) + (35 if cid in self.allied else 0) + self.reputation * 0.15 + (4 if self.perk("res_open") else 0)
             self.rel[cid] += _clamp(target - self.rel[cid], -0.05, 0.05 if cid not in self.trade else 0.08)
             if cid in self.allied:
                 self.rel[cid] = max(self.rel[cid], 55.0)
@@ -812,12 +890,14 @@ class Simulation:
         self.war_since.setdefault(victim, self.turn)
         self.trade.discard(victim)
         self.rel[victim] = min(self.rel[victim], -75.0)
+        k = 0.5 if self.perk("mil_prop") else 1.0
         for n in self.countries[victim]["borders"]:
             if n in self.rel and n not in self.war:
-                self._change_rel(n, -8)
+                self._change_rel(n, -8 * k)
         for cid in self.rel:
             if cid not in self.war:
-                self._change_rel(cid, -2)
+                self._change_rel(cid, -2 * k)
+        self._rep(-4 * k)
 
     def _ai_war_daily(self):
         for cid in list(self.war):
@@ -825,7 +905,7 @@ class Simulation:
             if self.turn < c["next_attack"] or self.turn < self.truce.get(cid, 0):
                 continue
             P = PERSONALITY[c["personality"]]
-            c["next_attack"] = self.turn + (26 if P["aggr"] else 40) + self.rng.randint(0, 14)
+            c["next_attack"] = self.turn + max(10, int(((26 if P["aggr"] else 40) + self.rng.randint(0, 14)) / self.diff["aggr"]))
             mine = self._my_regions()
             stolen = [r for r in mine if r["country_id"] == cid]
             adj = [r for r in mine if r["country_id"] in c["borders"]]
@@ -835,7 +915,7 @@ class Simulation:
             tgt = self.rng.choice(pool)
             share = tgt["population"] / max(1.0, self._owned_pop.get(self.player, 1.0))
             ratio = self.power(cid) * 0.9 / max(1e-6, self.power(self.player) * (0.35 + 0.65 * share) * (1 + 0.1 * self.tech["military"]))
-            if self.rng.random() < _clamp(ratio / (ratio + 1), 0.05, 0.85):
+            if self.rng.random() < _clamp(ratio / (ratio + 1), 0.05, 0.85) * (0.7 if self.perk("mil_fort") else 1.0):
                 tgt["owner"], tgt["lockdown"], tgt["cordon"], tgt["unrest"] = cid, False, False, 0.0
                 self.stability = max(0.0, self.stability - 0.02)
                 self._news("%s attacks and takes %s from you!" % (c["name"], self._rname(tgt)), imp=True, kind="dip")
@@ -899,14 +979,14 @@ class Simulation:
         if P["aggr"] <= 0 or cid in self.allied:
             return
         if cid not in self.war and self.rel.get(cid, 0) < -10 and any(n in c["borders"] for n in self._my_cids) \
-                and self.power(cid) * 0.8 > self.power(self.player) * 0.5 and self.rng.random() < 0.05 * P["aggr"]:
+                and self.power(cid) * 0.8 > self.power(self.player) * 0.5 and self.rng.random() < 0.05 * P["aggr"] * self.diff["aggr"]:
             self.war.add(cid)
             self.war_since[cid] = self.turn
             self.rel[cid] = min(self.rel[cid], -70.0)
             c["next_attack"] = self.turn + 25
             self._news("WAR: %s declares war on %s!" % (c["name"], self._cname(self.player)), imp=True, kind="dip")
             return
-        if self.rng.random() < 0.012 * P["aggr"]:                # AI against AI
+        if self.rng.random() < 0.012 * P["aggr"] * self.diff["aggr"]:                # AI against AI
             rivals = [n for n in c["borders"] if n != self.player and n in self.countries and not self.countries[n]["merged"]
                       and self._by_owner.get(n) and self._get_rel(cid, n) < 0 and self.power(cid) > 1.6 * self.power(n)]
             if rivals:
@@ -938,7 +1018,8 @@ class Simulation:
                 continue
             contrib += CURE_COUNTRY * c["stability"] * math.sqrt(c["population"] / 1e6) * (0.2 + self._cinf.get(cid, 0.0)) \
                 * (1 + 0.25 * c["tech"]["research"])
-        rate = (CURE_BASE + contrib) * (1 + RESEARCH_CURE[self.tech["research"]]) / self.D["cure"]
+        rate = (CURE_BASE + contrib) * (1 + RESEARCH_CURE[self.tech["research"]]) * (1 + 0.05 * self.perk("res_open") + 0.08 * self.perk("res_fast")) \
+            * self.diff["cure"] / self.D["cure"]
         self.cure_progress = min(1.0, self.cure_progress + rate)
         for m in (0.25, 0.5, 0.75):
             if self.cure_progress >= m and m not in self._milestones:
@@ -1032,7 +1113,7 @@ class Simulation:
                 self.mm["leak"] += v
             else:
                 self.mm[k] *= v
-        self.next_mutation = self.turn + self.rng.randint(60, 100)
+        self.next_mutation = self.turn + int(self.rng.randint(60, 100) * self.diff["mut"])
         self._news("MUTATION: %s turns %s." % (self.disease_name, name.lower()), imp=False, kind="cure")
         self._post(events.card("mut_" + key, "Mutation: " + name, text, "flask"))
 
@@ -1047,6 +1128,118 @@ class Simulation:
         _, ev, ctx = pool[i]
         self._post(events.build(self, ev, ctx))
         self.next_event = self.turn + self.rng.randint(7, 14)
+
+    # ------------------------------------------------------------ campaigns
+    def _campaigns_day(self):
+        for c in list(self.campaigns):
+            r = self.regions[c["rid"]]
+            if r["owner"] == self.player:
+                self.campaigns.remove(c)
+                continue
+            c["day"] += 1
+            f = FORCE[c["force"]]
+            blitz = self.perk("mil_blitz")
+            delta = (c["base"] + c["bonus"] - 0.35) * 30 * f["speed"] * (1.4 if blitz else 1.0) + self.rng.uniform(-5, 5)
+            c["front"] += delta
+            loss = self.rng.randint(120, 380) * f["loss"] * (c["loss_mult"] if self.turn < c["loss_until"] else 1.0)
+            loss *= (1.4 if blitz else 1.0) * (0.7 if self.perk("mil_vet") else 1.0) * (1.3 if delta < 0 else 1.0)
+            loss = int(loss)
+            c["dead"] += loss
+            self.army_dead += loss
+            self.stability = max(0.0, self.stability - loss * 0.0000025)
+            c["enemy_dead"] += int(loss * self.rng.uniform(0.8, 2.2))
+            seen = c["seen"]
+            if c["day"] >= 3 and "dig" not in seen:
+                seen.append("dig")
+                self._post(events.battle(self, "dig", c))
+            elif c["day"] >= 6 and "civ" not in seen:
+                seen.append("civ")
+                self._post(events.battle(self, "civ", c))
+            elif c["day"] >= 8 and c["front"] > 30 and "terms" not in seen:
+                seen.append("terms")
+                self._post(events.battle(self, "terms", c))
+            elif ((c["front"] < 10 and c["day"] >= 7) or c["dead"] > 6000) and "tired" not in seen:
+                seen.append("tired")
+                self._post(events.battle(self, "tired", c))
+            if c["front"] >= 100:
+                self._camp_win(c, r)
+            elif c["front"] <= -40:
+                self._camp_end(c, r, "routed")
+            elif c["day"] >= 30:
+                self._camp_end(c, r, "stalemate")
+
+    def _camp_win(self, c, r):
+        self.campaigns.remove(c)
+        r["owner"], r["unrest"], r["lockdown"], r["cordon"] = self.player, 0.3, False, False
+        self.conquests += 1
+        self._adv("general", 6)
+        self._news("VICTORY: %s falls to %s after %d days." % (self._rname(r), self._cname(self.player), c["day"]), imp=True, kind="dip")
+        self._post(events.card("camp%d" % c["id"], "%s falls" % r["name"],
+                               "After %d days of fighting, %s is yours. You lost %s soldiers; they lost about %s. The flags come down on the town hall at dawn."
+                               % (c["day"], self._rname(r), format(c["dead"], ","), format(c["enemy_dead"], ",")), "fire"))
+        self._post(events.battle(self, "occ", c))
+
+    def _camp_end(self, c, r, how):
+        self.campaigns.remove(c)
+        self._adv("general", -6)
+        self.stability = max(0.0, self.stability - 0.03)
+        self._news("DEFEAT: the campaign for %s %s." % (self._rname(r), "collapses" if how == "routed" else "ends in a stalemate"), imp=True, kind="dip")
+        self._post(events.card("camp%d" % c["id"], "The army withdraws" if how == "routed" else "No victory, no defeat",
+                               "The offensive on %s has failed. %s soldiers are dead, and %s is still at war with you."
+                               % (self._rname(r), format(c["dead"], ","), self._cname(c["target"])), "skull"))
+
+    def campaign_info(self):
+        out = []
+        for c in self.campaigns:
+            r = self.regions[c["rid"]]
+            out.append({"id": c["id"], "rid": c["rid"], "region": r["name"], "country": self._cname(c["target"]), "force": FORCE[c["force"]]["label"],
+                        "day": c["day"], "front": round(c["front"], 1), "dead": c["dead"], "enemy_dead": c["enemy_dead"]})
+        return out
+
+    # ------------------------------------------------------------ cabinet
+    def _advisors_day(self):
+        for role, a in self.advisors.items():
+            a["loyalty"] += (50.0 - a["loyalty"]) * 0.003
+            if self.stability < 0.3:
+                a["loyalty"] -= 0.04
+        self.reputation *= 0.999
+
+    def advisor_info(self):
+        eff = {"health": lambda m: "People %d%% %s to infect" % (abs(round((m - 1) * 100)), "harder" if m >= 1 else "easier"),
+               "general": lambda m: "Army strength %+d%%" % round((m - 1) * 100),
+               "economist": lambda m: "Income %+d%%" % round((m - 1) * 100)}
+        return [{"role": k, "title": ROLES[k], "name": a["name"], "loyalty": round(a["loyalty"]), "effect": eff[k](self._advm(k))}
+                for k, a in self.advisors.items()]
+
+    # ------------------------------------------------------------ saving
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        d.pop("sea", None)                                    # rebuilt from data/sea_grid.json on load
+        return d
+
+    def __setstate__(self, d):
+        self.__dict__.update(d)
+        self.sea = ensure_sea_grid(self.data_dir)
+
+    def save(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as f:
+            pickle.dump(self, f, protocol=4)
+        os.replace(tmp, path)
+
+    @staticmethod
+    def load(path):
+        with open(path, "rb") as f:
+            g = pickle.load(f)
+        if getattr(g, "version", 0) != SAVE_VERSION:
+            raise ValueError("This save comes from another version of the game.")
+        g._new_news = []
+        return g
+
+    def meta(self):
+        return {"country": self._cname(self.player), "disease": self.disease_name, "difficulty": self.diff["label"],
+                "date": self.date_of().isoformat(), "day": self.turn, "phase": PHASES[self.phase]}
 
     # ------------------------------------------------------------ one day
     def _day(self):
@@ -1064,6 +1257,8 @@ class Simulation:
         self._medicine()
         self._diplomacy_drift()
         self._ai_daily()
+        self._campaigns_day()
+        self._advisors_day()
         self._cure_phase()
         self._pathogen()
         self._events_phase()
@@ -1181,21 +1376,48 @@ class Simulation:
                 self._pending = self._queue.pop(0) if self._queue else None
 
     def _act_upgrade(self, p):
-        track = p.get("track") or p.get("upgrade_type")
-        track = {"science": "research"}.get(track, track)
-        if track not in TRACKS:
+        nid = p.get("node")
+        if not nid:                                           # old API: buy the next trunk tier of a tab
+            track = p.get("track") or p.get("upgrade_type")
+            track = {"science": "research"}.get(track, track)
+            if track not in TRACKS:
+                return False, "Unknown upgrade."
+            if self.tech[track] >= 5:
+                return False, "%s is fully upgraded." % TRACKS[track][0]
+            nid = "%s_%d" % (track, self.tech[track] + 1)
+        node = tree.BY_ID.get(nid)
+        if not node:
             return False, "Unknown upgrade."
-        tier = self.tech[track]
-        if tier >= 5:
-            return False, "%s is fully upgraded." % TRACKS[track][0]
-        cost = TIER_COST[tier]
-        if self.budget < cost:
-            return False, "Not enough budget (need $%d)." % cost
-        self.budget -= cost
-        self.tech[track] = tier + 1
-        name = TRACKS[track][2][tier][0]
-        self._news("You built: %s (%s level %d)." % (name, TRACKS[track][0], tier + 1), kind="local")
-        return True, "%s built." % name
+        if self.has_node(nid):
+            return False, "You already built that."
+        for rq in node["req"]:
+            if not self.has_node(rq):
+                return False, "Build %s first." % tree.BY_ID[rq]["name"]
+        if node["excl"]:
+            other = [n for n in tree.NODES if n["excl"] == node["excl"] and n["id"] != nid and self.has_node(n["id"])]
+            if other:
+                return False, "You chose %s. Sell it first if you want to change doctrine." % other[0]["name"]
+        if self.budget < node["cost"]:
+            return False, "Not enough budget (need $%d)." % node["cost"]
+        self.budget -= node["cost"]
+        if node["kind"] == "trunk":
+            self.tech[node["tab"]] = node["tier"]
+        else:
+            self.perks.add(nid)
+        role = {"medicine": "health", "research": "health", "military": "general", "economy": "economist"}.get(node["tab"])
+        if role:
+            self._adv(role, 4)
+        self._news("You built: %s." % node["name"], kind="local")
+        return True, "%s built." % node["name"]
+
+    def _act_sell_node(self, p):
+        nid = p.get("node")
+        node = tree.BY_ID.get(nid)
+        if not node or node["kind"] != "branch" or nid not in self.perks:
+            return False, "You can only sell branch upgrades you own."
+        self.perks.discard(nid)
+        self.budget += node["cost"] * 0.5
+        return True, "%s sold for $%d." % (node["name"], node["cost"] * 0.5)
 
     def _act_medicine_policy(self, p):
         pol = p.get("policy")
@@ -1268,6 +1490,9 @@ class Simulation:
             self._change_rel_all(-3)
             self.stability = max(0.0, self.stability - 0.04)
             self._news("%s imposes a lethal cordon on %s." % (self._cname(self.player), self._rname(r)), imp=False, kind="local")
+            self._rep(-5)
+            self._adv("health", -10)
+            self._adv("general", 3)
         else:
             self._news("The cordon around %s is lifted." % self._rname(r), kind="local")
         return True, "Lethal cordon %s." % ("ON" if on else "lifted")
@@ -1285,6 +1510,9 @@ class Simulation:
         self.stability = max(0.0, self.stability - 0.20)
         self._change_rel_all(-12)
         self._news("%s destroys %s to stop the disease. The world is horrified." % (self._cname(self.player), self._rname(r)), imp=False, kind="local")
+        self._rep(-25)
+        self._adv("health", -25)
+        self._adv("general", 5)
         return True, "%s was wiped out. The infection is gone, and so are its people." % r["name"]
 
     def _change_rel_all(self, delta):
@@ -1298,24 +1526,28 @@ class Simulation:
             return False, "Unknown region."
         if r["owner"] == self.player:
             return False, "You already control this region."
+        force = p.get("force", "standard")
+        if force not in FORCE:
+            return False, "Unknown force."
         defender = r["owner"]
         if defender in self.allied:
             return False, "%s is your ally." % self._cname(defender)
         if self.turn < self.truce.get(defender, 0):
             return False, "A ceasefire with %s is in force." % self._cname(defender)
-        cost, chance, _ = self.invade_info(r)
+        if any(c["rid"] == r["id"] for c in self.campaigns):
+            return False, "Your army is already fighting there."
+        if len(self.campaigns) >= 2:
+            return False, "Your army can fight two campaigns at once, no more."
+        cost, chance, _ = self.invade_info(r, force)
         if self.budget < cost:
             return False, "Not enough budget (need $%d)." % cost
         self.budget -= cost
         self._provoke(defender, r)
-        if self.rng.random() < chance:
-            r["owner"], r["unrest"], r["lockdown"], r["cordon"] = self.player, 0.25, False, False
-            self.conquests += 1
-            self.stability = max(0.0, self.stability - 0.02)
-            self._news("INVASION: %s captured %s! %s is now at war with you." % (self._cname(self.player), self._rname(r), self._cname(defender)), kind="dip")
-            return True, "%s is yours. Expect revenge from %s." % (r["name"], self._cname(defender))
-        self._news("The invasion of %s failed. %s is at war with you." % (self._rname(r), self._cname(defender)), kind="dip")
-        return True, "The invasion failed, and %s is now at war with you." % self._cname(defender)
+        self._camp_id += 1
+        self.campaigns.append({"id": self._camp_id, "rid": r["id"], "target": defender, "force": force, "day": 0, "front": 0.0,
+                               "dead": 0, "enemy_dead": 0, "base": chance, "bonus": 0.0, "loss_mult": 1.0, "loss_until": 0, "seen": []})
+        self._news("WAR: %s's army crosses into %s. The %s on %s begins." % (self._cname(self.player), self._cname(defender), FORCE[force]["label"].lower(), self._rname(r)), kind="dip")
+        return True, "The %s on %s has begun. Watch the front." % (FORCE[force]["label"].lower(), r["name"])
 
     # ---- diplomacy actions
     def _target(self, p):
@@ -1409,7 +1641,7 @@ class Simulation:
         if self.turn < self.cooldown.get((cid, "peace"), 0):
             return False, "They refuse to talk yet."
         self.budget -= cost
-        chance = _clamp(0.3 + 0.004 * (self.rel[cid] + 100) - 0.12 * stolen + 0.002 * (self.turn - self.war_since.get(cid, self.turn)), 0.1, 0.85)
+        chance = _clamp((0.3 + 0.004 * (self.rel[cid] + 100) - 0.12 * stolen + 0.002 * (self.turn - self.war_since.get(cid, self.turn))) * self.diff["peace"], 0.08, 0.85)
         if self.rng.random() < chance:
             self.war.discard(cid)
             self.war_since.pop(cid, None)
@@ -1430,7 +1662,7 @@ class Simulation:
             return False, "You do not sell medicine to an enemy."
         if self.med_stock < 60:
             return False, "You need 60 doses in stock."
-        price = 1.3 + 2.0 * self._cinf.get(cid, 0.0)
+        price = (1.3 + 2.0 * self._cinf.get(cid, 0.0)) * (1.3 if self.perk("med_export") else 1.0)
         self.med_stock -= 60
         self.med_exported += 60
         self.budget += 60 * price
@@ -1448,6 +1680,10 @@ class Simulation:
         info = {"id": rid, "owner": r["owner"], "mine": r["owner"] == self.player}
         if r["owner"] != self.player:
             cost, chance, adj = self.invade_info(r)
+            info["force_options"] = [dict(key=k, label=f["label"], text=f["text"], cost=self.invade_info(r, k)[0], chance=round(self.invade_info(r, k)[1], 2))
+                                     for k, f in FORCE.items()]
+            info["campaign"] = any(c["rid"] == rid for c in self.campaigns)
+            info["campaigns_full"] = len(self.campaigns) >= 2
             info.update(invade_cost=cost, invade_chance=round(chance, 2), adjacent=adj,
                         at_war=r["owner"] in self.war, allied=r["owner"] in self.allied,
                         blocked="" if r["owner"] not in self.allied else "ally",
@@ -1498,6 +1734,8 @@ class Simulation:
                          "policy": self.med_policy, "exported": self.med_exported,
                          "resistance": round(self._resistance(self.player), 2)},
             "war": sorted(self.war), "allied": sorted(self.allied), "trade": sorted(self.trade), "union": sorted(self.union),
+            "nodes": [n["id"] for n in tree.NODES if self.has_node(n["id"])], "reputation": round(self.reputation),
+            "army_dead": self.army_dead,
         }
 
     def _public_pending(self):
@@ -1531,6 +1769,8 @@ class Simulation:
             "mods": [{"name": events.MOD_LABELS[k][0], "text": events.MOD_LABELS[k][1], "days": v - self.turn}
                      for k, v in self.mods.items() if v > self.turn and k in events.MOD_LABELS],
             "pending": self._public_pending(),
+            "difficulty": self.difficulty, "difficulty_label": self.diff["label"],
+            "campaigns": self.campaign_info(), "advisors": self.advisor_info(),
         }
 
     def summary(self, full=True):
@@ -1557,6 +1797,7 @@ class Simulation:
         if full:
             d["log"] = self.log
             d["news"] = self.log[:5]
+            d["tree"] = tree.public()
             d["tracks"] = {k: {"name": v[0], "text": v[1], "tiers": [{"name": t[0], "text": t[1], "cost": TIER_COST[i]} for i, t in enumerate(v[2])]}
                            for k, v in TRACKS.items()}
         return d
